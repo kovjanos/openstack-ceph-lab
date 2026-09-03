@@ -12,7 +12,7 @@ The whole lab is three scripts. The phase-by-phase text below is the reference f
 what they do and why; you do not need to work through it by hand.
 
 ```bash
-cd ~/OStack-Ceph
+cd ~/openstack-ceph-lab
 ./01-build-kernel.sh     # macOS. Produces vmlinux-arm64, then cleans up after itself.
 ./02-build-image.sh      # macOS. Builds local/ubuntu-machine:latest and creates the machine.
 container machine run -n openstack-lab --root -- /usr/local/sbin/provision-lab.sh
@@ -116,7 +116,7 @@ down work.
 Incus and RGW commands all run through `sudo` (as root); OpenStack runs as a dedicated
 `kolla` service account created in 5.2; shared artifacts live in `/etc/openstack-lab`
 rather than a home directory. The only `~/` paths in this guide are on the **macOS
-side** (`~/OStack-Ceph`, `~/.zshrc`), where they refer to your own Mac account.
+side** (`~/openstack-ceph-lab`, `~/.zshrc`), where they refer to your own Mac account.
 
 ---
 
@@ -356,7 +356,7 @@ The stock kernel lacks device-mapper, which makes LVM impossible and therefore C
 impossible.
 
 ```bash
-mkdir -p ~/OStack-Ceph && cd ~/OStack-Ceph
+mkdir -p ~/openstack-ceph-lab && cd ~/openstack-ceph-lab
 git clone https://github.com/apple/containerization
 cd containerization/kernel
 ```
@@ -548,7 +548,7 @@ the checkout's HEAD, so it changes when upstream moves.
 ### 1.3 Machine image
 
 ```bash
-cd ~/OStack-Ceph
+cd ~/openstack-ceph-lab
 cat << 'EOF' > Dockerfile
 FROM ubuntu:24.04
 ENV container container
@@ -907,7 +907,7 @@ installed at runtime — the `ceph-lab-remap` unit above is ordered against
 ```bash
 container machine create \
   --virtualization \
-  --kernel ~/OStack-Ceph/vmlinux-arm64 \
+  --kernel ~/openstack-ceph-lab/vmlinux-arm64 \
   --name openstack-lab \
   --cpus 8 \
   --memory 24G \
@@ -2610,7 +2610,7 @@ lab picks up a new kernel with no re-provisioning:
 
 ```bash
 ./01-build-kernel.sh
-container machine set -n openstack-lab kernel=~/OStack-Ceph/vmlinux-arm64
+container machine set -n openstack-lab kernel=~/openstack-ceph-lab/vmlinux-arm64
 container machine stop openstack-lab && container machine run
 ```
 

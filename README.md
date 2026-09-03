@@ -45,8 +45,8 @@ macOS (Apple Silicon, macOS 26)
 ## Quick start
 
 ```bash
-git clone https://github.com/kovjanos/openstack-ceph-lab.git OStack-Ceph
-cd OStack-Ceph
+git clone https://github.com/kovjanos/openstack-ceph-lab.git
+cd openstack-ceph-lab
 
 ./01-build-kernel.sh     # macOS. Produces vmlinux-arm64, then cleans up after itself.
 ./02-build-image.sh      # macOS. Builds the image and creates the machine.
