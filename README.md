@@ -38,7 +38,7 @@ macOS (Apple Silicon, macOS 26)
 | Hardware | Apple Silicon M3 or later |
 | macOS | 26 |
 | Tooling | Apple [`container`](https://github.com/apple/container) CLI 1.3.1+ |
-| Memory | 24 GB to the machine minimum, 28 GB comfortable, 32 GB on a 48 GB Mac |
+| Memory | 26 GB to the machine by default; 24 GB works with `ENABLE_NETWORK_LOADBALANCER=no`, 32 GB on a 48 GB Mac |
 | Disk | ~90 GB free during the build |
 | Time | A few hours, nearly all of it pulling Kolla's container images |
 
@@ -59,21 +59,23 @@ The third script runs inside the VM and is baked into the image, so after loggin
 (`container machine run -n openstack-lab`, then `sudo -i`) you can just run
 `provision-lab`.
 
-**Network load balancing is on by default.** Measured on a 24 GB machine, the four
-Octavia containers cost 1.4 GB all the time — ordinary here, where `neutron_server`
-alone is 0.9 GB — and the two amphorae cost 2 GB more, but only while exercises 9–11
-are running. Peak observed was 19.9 GB of 24 GB.
+**Network load balancing is on by default, and the machine defaults to 26 GB to
+accommodate it.** The four Octavia containers cost 1.4 GB all the time — ordinary here,
+where `neutron_server` alone is 0.9 GB — and the two amphorae cost 2 GB more, but only
+while exercises 9–11 are running.
 
-If your machine is tighter, two ways out, in this order:
+It runs on 24 GB: measured peak was 19.9 GB, leaving 4.2 GB. That works, but it is thin
+if anything else on the machine is busy, so 26 GB is the default rather than the
+minimum.
+
+**If you need to run on 24 GB**, build without it:
 
 ```bash
-ENABLE_NETWORK_LOADBALANCER=no provision-lab     # rebuild without it
+ENABLE_NETWORK_LOADBALANCER=no provision-lab
 ```
 
 Everything except exercises 9–11 is unchanged, and Exercise 9 still teaches round-robin
-and sticky sessions using HAProxy in a guest. Or raise `MACHINE_MEMORY` in
-`02-build-image.sh` to **26G**, or **28G** to be comfortable — that recreates the
-machine, so decide before building the lab rather than after.
+and sticky sessions using HAProxy in a guest.
 
 It costs one-off resources too: about 3 minutes to build the amphora image, and 7.5 GiB
 of the 45 GiB Ceph cluster once it is in Glance (2.5 GiB raw, charged at `size = 3`).

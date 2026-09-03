@@ -41,14 +41,19 @@ CEPH_VERSION="20.2.2"
 # Machine size. Override from the environment, e.g.
 #     MACHINE_MEMORY=32G ./02-build-image.sh
 #
-#   24G  minimum      -- Ceph, Kolla and ~13 GB left for guest instances
-#   28G  comfortable  -- room for 4-6 small guests alongside the control plane
-#   32G+ recommended on a 48 GB Mac, if you want to run several workloads at once
+#   24G  works, but tight -- measured peak with the load balancer running was
+#        19.9 GB, leaving 4.2 GB. Fine on its own, thin if anything else is going on
+#   26G  default          -- the same lab with headroom that is not marginal
+#   28G  comfortable      -- room for 4-6 small guests alongside the control plane
+#   32G+ on a 48 GB Mac, if you want to run several workloads at once
+#
+# 24G is still a supported size: build with ENABLE_NETWORK_LOADBALANCER=no and the
+# four Octavia containers (1.4 GB) and two amphorae (2 GB) are never created.
 #
 # Below 24G the Kolla control plane and the three Ceph nodes leave too little for
 # any guest to boot. Leave the Mac at least 12 GB for itself.
 MACHINE_CPUS="${MACHINE_CPUS:-8}"
-MACHINE_MEMORY="${MACHINE_MEMORY:-24G}"
+MACHINE_MEMORY="${MACHINE_MEMORY:-26G}"
 MIN_FREE_GB=60
 
 MAKE_MACHINE=1

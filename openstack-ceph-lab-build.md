@@ -911,7 +911,7 @@ container machine create \
   --kernel ~/openstack-ceph-lab/vmlinux-arm64 \
   --name openstack-lab \
   --cpus 8 \
-  --memory 24G \
+  --memory 26G \
   --home-mount none \
   local/ubuntu-machine:latest
 container machine set-default openstack-lab
@@ -925,7 +925,7 @@ there is no option to bind-mount a single directory, so if you want a file insid
 it into the image or pipe it in over stdin.
 
 `--cpus` and `--memory` are accepted at create time; the separate
-`container machine set -n openstack-lab cpus=8 memory=24G` is only needed to change
+`container machine set -n openstack-lab cpus=8 memory=26G` is only needed to change
 them later, and takes effect on the next restart.
 
 Verify both kernel features landed:
@@ -1767,7 +1767,7 @@ symptom otherwise is a five-minute
 
 #### Host minimums
 
-8 GB RAM and 40 GB disk, comfortably met by the 24 GB / 500 GB machine from 1.4.
+8 GB RAM and 40 GB disk, comfortably met by the 26 GB / 500 GB machine from 1.4.
 
 > `network_interface` on a private subnet is non-routable from macOS, so Horizon needs
 > the explicit port-forward in 6.2, and that forward must come from
