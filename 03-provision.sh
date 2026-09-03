@@ -99,14 +99,33 @@ die()  { printf 'ERROR: %s\n' "$*" | tee -a "$LOG" >&2; exit 1; }
 ceph_do() { incus exec ceph-node1 -- cephadm shell -- "$@" 2>/dev/null; }
 
 # Poll until a command succeeds. wait_for <seconds> <description> <cmd...>
+#
+# Says what it is waiting for before it starts waiting, and repeats every 30s. A
+# silent 50-second pause reads like a hang; "still waiting" reads like patience.
+#
+# The three outcomes are worded so they cannot be confused with each other, which
+# matters more than it sounds: "not ready yet" during a wait is normal, and only
+# the line after the timeout means something is actually wrong.
 wait_for() {
     local timeout="$1" what="$2"; shift 2
     local waited=0
+
+    # Already true: one quiet line, no drama.
+    if "$@" >/dev/null 2>&1; then
+        info "$what -- ok"
+        return 0
+    fi
+
+    info "waiting for $what (up to ${timeout}s -- this is normal after a restart)"
     until "$@" >/dev/null 2>&1; do
-        [ "$waited" -ge "$timeout" ] && { info "timed out waiting for $what"; return 1; }
+        if [ "$waited" -ge "$timeout" ]; then
+            info "GAVE UP: $what did not happen within ${timeout}s -- this one needs looking at"
+            return 1
+        fi
         sleep 5; waited=$((waited + 5))
+        [ $((waited % 30)) -eq 0 ] && info "  ... still waiting for $what (${waited}s)"
     done
-    info "$what ready after ${waited}s"
+    info "$what -- ok after ${waited}s"
     return 0
 }
 
@@ -1216,7 +1235,7 @@ EOF
 
     wait_for 180 "octavia api answering" bash -c \
         "timeout 5 bash -c '</dev/tcp/$KOLLA_VIP/9876'" \
-        || die "octavia-api is not listening -- docker logs octavia_api"
+        || die "NOT listening: octavia-api -- check 'docker logs octavia_api'"
 
     # Third missing CLI plugin, after heat and barbican: Kolla's venv has no
     # octaviaclient, so 'openstack loadbalancer ...' is not an openstack command at
@@ -1244,9 +1263,23 @@ phase_90_verify() {
              OS_CLIENT_CONFIG_FILE=/etc/kolla/clouds.yaml OS_CLOUD=kolla-admin openstack $*" 2>&1
     }
 
+    info "this phase waits for services that may still be starting -- pauses are expected,"
+    info "and nothing here is a problem unless a line says GAVE UP or NOT."
+
     log "ceph"
-    ceph_do ceph -s | sed 's/^/    /' | tee -a "$LOG"
-    ceph_do ceph -s | grep -q HEALTH_OK || info "cluster is not HEALTH_OK (see above)"
+    # After a machine restart the mons re-form quorum and the OSDs re-peer, and
+    # HEALTH_OK comes back 60-90s in. Checking once and announcing "cluster is not
+    # HEALTH_OK" turns ordinary startup into an alarm -- which is exactly how it read
+    # to someone running this a minute after boot. Wait first, judge afterwards.
+    if wait_for 300 "Ceph to reach HEALTH_OK" bash -c \
+        "incus exec ceph-node1 -- cephadm shell -- ceph health 2>/dev/null | grep -q HEALTH_OK"
+    then
+        ceph_do ceph -s | sed 's/^/    /' | tee -a "$LOG"
+    else
+        ceph_do ceph -s | sed 's/^/    /' | tee -a "$LOG"
+        info "NOT healthy after 5 minutes. 'ceph health detail' says:"
+        ceph_do ceph health detail 2>/dev/null | head -20 | sed 's/^/      /' | tee -a "$LOG"
+    fi
 
     # After a machine restart the Kolla containers come back on Docker's restart
     # policy, but keepalived takes another 20-30s to claim the VIP. Querying before
@@ -1254,10 +1287,10 @@ phase_90_verify() {
     # haproxy -- which looks like a broken deployment and is only impatience.
     wait_for 300 "keepalived to claim the VIP" \
         bash -c "ip -br addr show kolla0 | grep -q '$KOLLA_VIP/'" \
-        || info "VIP $KOLLA_VIP never appeared -- check 'docker logs keepalived'"
+        || info "NOT up: the VIP $KOLLA_VIP never appeared -- check 'docker logs keepalived'"
     wait_for 300 "keystone on the VIP" \
         bash -c "curl -sS -m 5 -o /dev/null http://$KOLLA_VIP:5000/" \
-        || info "keystone did not answer on $KOLLA_VIP:5000"
+        || info "NOT answering: keystone on $KOLLA_VIP:5000 -- check 'docker logs keystone'"
 
     log "openstack services"
     os service list | sed 's/^/    /' | tee -a "$LOG"
@@ -1267,22 +1300,31 @@ phase_90_verify() {
     # which looks like a dead cloud rather than one still starting.
     wait_for 300 "nova API on the VIP" bash -c \
         "curl -sS -m 5 -o /dev/null http://$KOLLA_VIP:8774/" \
-        || info "nova API did not answer on $KOLLA_VIP:8774"
+        || info "NOT answering: nova API on $KOLLA_VIP:8774 -- check 'docker logs nova_api'"
 
     log "compute"
     os compute service list | sed 's/^/    /' | tee -a "$LOG"
 
     # This is what proves libvirt reached /dev/kvm through nested virtualization.
     # An empty list with services up means compute failed to register -- almost
-    # always the Ceph keyring not being readable by nova-compute.
-    hv=$(os hypervisor list -f value -c ID 2>/dev/null \
-           | grep -cE '^[0-9a-f]{8}-[0-9a-f]{4}-' || true)
-    if [ "$hv" -ge 1 ]; then
+    # always the Ceph keyring not being readable by nova-compute. But nova-compute
+    # also takes a little while to report in after a restart, so wait before
+    # concluding anything: an empty list at 20 seconds means nothing at all.
+    if wait_for 180 "the hypervisor to register with nova" bash -c \
+        "sudo -u kolla bash -lc '. /opt/kolla/venv/bin/activate && \
+         OS_CLIENT_CONFIG_FILE=/etc/kolla/clouds.yaml OS_CLOUD=kolla-admin \
+         openstack hypervisor list -f value -c ID' 2>/dev/null \
+         | grep -qE '^[0-9a-f]{8}-[0-9a-f]{4}-'"
+    then
+        hv=$(os hypervisor list -f value -c ID 2>/dev/null \
+               | grep -cE '^[0-9a-f]{8}-[0-9a-f]{4}-' || true)
         info "hypervisor registered ($hv)"
     else
-        info "no hypervisor registered -- trying cell discovery"
+        info "still no hypervisor -- trying cell discovery, which is the usual fix"
         docker exec nova_conductor nova-manage cell_v2 discover_hosts --verbose 2>&1 | tail -5 | tee -a "$LOG"
         os hypervisor list | sed 's/^/    /' | tee -a "$LOG"
+        info "if that list is still empty: NOT registered -- check the cinder/nova"
+        info "keyrings in /etc/ceph and 'docker logs nova_compute'"
     fi
 
     # The Ceph dashboard lives on the Incus bridge; a proxy device brings it to
@@ -1299,7 +1341,7 @@ phase_90_verify() {
     if ceph_do ceph orch ls 2>/dev/null | grep -q '^rgw.lab'; then
         wait_for 300 "RGW serving after restart" bash -c \
             "timeout 5 bash -c '</dev/tcp/$CEPH_SUBNET.11/$RGW_CONTAINER_PORT'" \
-            || info "RGW not serving yet -- check 'ceph orch ps --daemon-type rgw'"
+            || info "NOT serving: RGW -- check 'ceph orch ps --daemon-type rgw'"
     fi
     # o-hm0 is a runtime OVS port, so it is the octavia thing most likely to be
     # missing after a restart. The drop-in in 87-octavia should have handled it;
@@ -1312,14 +1354,14 @@ phase_90_verify() {
             systemctl start octavia-interface 2>/dev/null || true
             wait_for 120 "o-hm0 up after restart" \
                 bash -c "ip -br addr show o-hm0 2>/dev/null | grep -q '10\.'" \
-                || info "o-hm0 still down -- load balancers will not be health-checked"
+                || info "NOT up: o-hm0 -- load balancers will not be health-checked"
         fi
     fi
 
     if ceph_do ceph nfs cluster ls 2>/dev/null | grep -q labnfs; then
         wait_for 300 "ganesha serving after restart" bash -c \
             "timeout 5 bash -c '</dev/tcp/$CEPH_SUBNET.11/2049'" \
-            || info "ganesha not serving yet -- check the unit inside ceph-node1"
+            || info "NOT serving: ganesha -- check the unit inside ceph-node1"
     fi
 
     log "object storage and shared filesystem"
