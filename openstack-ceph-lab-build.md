@@ -104,7 +104,7 @@ or pushed in with `sync-provision.sh`.
 | 7: Ceph RGW / S3 | **Verified** — phase `85-rgw`; s3cmd put/get round trip, survives a machine restart |
 | 8: CephFS + NFSv4 | **Verified** — phase `86-nfs`; export mounted and read/written, survives a machine restart |
 | Monitoring (Grafana / Prometheus / Alertmanager) | **Verified** — proxied by `90-verify`; embedded panels render, URLs re-point themselves after the VM address changes |
-| Octavia / load balancing | Deferred to v3 — see Further work |
+| Octavia / load balancing | **Verified** — `ACTIVE_STANDBY`, amphora image built for aarch64; on by default, `ENABLE_NETWORK_LOADBALANCER=no` to skip |
 | Manila (shared filesystems API) | Deferred to v3; CephFS + NFS covers the capability without it |
 
 Built and verified from scratch on 2026-09-02: kernel `6.18.5-cz-fc9e63846f36`, Ceph

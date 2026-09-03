@@ -53,22 +53,39 @@ DASHBOARD_PASSWORD=ChangeMeBeforeUse
 RGW_CONTAINER_PORT=8000
 RGW_VM_PORT=8100
 
-# Network load balancing is optional, because it is the most expensive thing in
-# this lab: four more Kolla containers, an amphora image that has to be built from
-# source on aarch64, and two 1 GB amphorae for every load balancer. A 24 GB machine
-# runs it; a smaller one should leave it off.
+# Network load balancing is ON by default. Measured on a 24 GB machine, what it
+# actually costs is smaller than it looks:
+#
+#   always      1.4 GB across four containers -- ordinary for this lab, where
+#               neutron_server alone is 0.9 GB
+#   part D only 2 GB, the two amphorae behind one load balancer; briefly 3 GB
+#               while a destroyed one is rebuilt
+#   one-off     ~3 minutes to build the amphora image, and 7.5 GiB of Ceph once
+#               it is in Glance (2.5 GiB raw at size 3)
+#
+# Peak observed with a load balancer, two backends and three amphorae alive at
+# once was 19.9 GB of 24 GB. It fits.
+#
+# If it does not fit on your machine -- other things running, a smaller VM -- there
+# are two ways out, in this order:
+#
+#   ENABLE_NETWORK_LOADBALANCER=no provision-lab    rebuild without it; the lab is
+#                                                   complete apart from exercises 9-11
+#   MACHINE_MEMORY=28G in 02-build-image.sh         26G is enough, 28G is comfortable;
+#                                                   needs the machine recreating
 #
 # The OpenStack service behind it is Octavia, which is what every setting below and
 # every error message says. The flag is named for the capability rather than the
 # project, because you should not need to know the latter to decide.
 #
-#   ENABLE_NETWORK_LOADBALANCER=yes provision-lab                 build the lab with it
-#   ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla add it to a built lab
+#   ENABLE_NETWORK_LOADBALANCER=no  provision-lab                 build without it
+#   ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla add it to a lab
+#                                                                 built without it
 #
 # It cannot be a bolt-on phase alone: enable_octavia has to be in globals.yml
 # before 80-deploy, because Kolla deploys the containers there. 87-octavia only
 # does what has to happen after Glance is up.
-ENABLE_NETWORK_LOADBALANCER="${ENABLE_NETWORK_LOADBALANCER:-no}"
+ENABLE_NETWORK_LOADBALANCER="${ENABLE_NETWORK_LOADBALANCER:-yes}"
 
 PHASES=(10-storage 20-incus 30-nodebase 40-nodes 50-ceph 60-hostclient 70-kolla 80-deploy 85-rgw 86-nfs 87-octavia 90-verify)
 
@@ -1093,7 +1110,7 @@ oscli() {
 
 phase_87_octavia() {
     if [ "$ENABLE_NETWORK_LOADBALANCER" != yes ]; then
-        info "octavia not enabled -- ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla adds it"
+        info "load balancing disabled -- ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla adds it"
         return 0
     fi
 

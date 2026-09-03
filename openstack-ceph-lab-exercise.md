@@ -100,11 +100,20 @@ instances for each. Peak cost is two guests (1 GB), or three guests plus two amp
 | **G. Ceph day-2** | 18 maintenance mode · 19 restricted user · 20 failure drill · 21 disk replacement · 22 CephFS snapshots · 23 replication cost · 24 scrub · 25 monitoring · 26 node add/remove | 1 guest, kept deliberately | |
 | **H. Recovery** | 27 full-cluster recovery · teardown | 1 guest | |
 
-**Part D needs the load-balancer build.** It is off by default because two amphorae at
-1 GB each is the most expensive thing in this lab. Turn it on with
-`ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`, or skip the part — the
-end of Exercise 9 teaches round-robin and sticky sessions with HAProxy in a guest for
-the price of one more instance. What it cannot teach is Exercise 11.
+**Part D needs the load-balancer build, which is on by default.** Measured on a 24 GB
+machine: the four Octavia containers cost 1.4 GB all the time — ordinary here, where
+`neutron_server` alone is 0.9 GB — and the two amphorae cost 2 GB more, but only while
+Part D is running. Peak observed, with a load balancer, two backends and three amphorae
+briefly alive during a rebuild, was 19.9 GB of 24 GB.
+
+If your machine is tighter than that, two ways out, in this order:
+
+- `ENABLE_NETWORK_LOADBALANCER=no provision-lab` — rebuild without it. Everything except
+  exercises 9–11 works unchanged, and the end of Exercise 9 still teaches round-robin
+  and sticky sessions using HAProxy in a guest, for one extra instance. What it cannot
+  teach is Exercise 11.
+- `MACHINE_MEMORY=28G` in `02-build-image.sh` — 26G is enough and 28G is comfortable.
+  This recreates the machine, so do it before you build the lab, not after.
 
 Exercise 9 retires the two guests from Part C before booting its own, and Exercise 11
 tears the load balancer down before Part G. Following the order keeps the peak at the
@@ -569,10 +578,11 @@ Associate / Disassociate Floating IP.
 
 ## Exercise 9 — One address, two servers
 
-> **Needs the load-balancer build.** Rebuild with
+> **Needs the load-balancer build**, which is on by default. If you built with
+> `ENABLE_NETWORK_LOADBALANCER=no`, either add it with
 > `ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`, or read the
 > **Without a load balancer** section at the end, which teaches the same thing with
-> HAProxy in a guest and costs nothing.
+> HAProxy in a guest.
 
 **The situation.** One web server is a single point of failure and a capacity ceiling.
 You add a second, and immediately have two new problems: which address do users type,
@@ -750,8 +760,8 @@ Octavia, and it is worth feeling rather than being told.
 
 ## Exercise 10 — The session that keeps logging out
 
-> **Needs the load-balancer build.** The HAProxy variant at the end of Exercise 9
-> demonstrates the same thing with a `cookie` line.
+> **Needs the load-balancer build** (on by default). The HAProxy variant at the end of
+> Exercise 9 demonstrates the same thing with a `cookie` line.
 
 **The situation.** A ticket arrives: "users get logged out at random". Nothing in the
 application logs looks wrong, and it only started when you added the second server. The
@@ -847,8 +857,8 @@ is a dropdown with the same three values.
 
 ## Exercise 11 — The load balancer died
 
-> **Needs the load-balancer build**, and specifically `ACTIVE_STANDBY`. With
-> `SINGLE` topology there is one amphora, and this exercise is a plain outage.
+> **Needs the load-balancer build** (on by default), and specifically `ACTIVE_STANDBY`.
+> With `SINGLE` topology there is one amphora, and this exercise is a plain outage.
 
 **The situation.** You put a load balancer in front of two servers so that losing one
 would not matter. Then someone asks the obvious question: what happens when the load
@@ -1623,6 +1633,21 @@ cinder-volumes  55 MiB stored   160 MiB used   MAX AVAIL 13 GiB
 Three numbers matter: **stored** is your data, **used** is what it occupies after
 replication (roughly 3×), and **MAX AVAIL** is what you can still write. On a 45 GiB
 cluster at `size = 3` you have about 13 GiB of usable space, not 45.
+
+**The clearest example is sitting in your own cluster.** Look at the images pool:
+
+```
+glance-images   2.8 GiB stored   8.3 GiB used   MAX AVAIL 11 GiB
+```
+
+Almost all of that is the amphora image from the load-balancer build — 2.5 GiB of
+image, charged at 7.5 GiB of cluster. One file took the cluster from 6% to 22% full and
+cost every other pool 2 GiB of MAX AVAIL, without anyone writing a byte of data. That
+is the entire lesson, and it is why `lab-workload` is a 248 MB Alpine build rather than
+a 3.5 GB distro image: that swap alone would cost 10.5 GiB here.
+
+(Built with `ENABLE_NETWORK_LOADBALANCER=no`? Then `glance-images` holds only
+`lab-workload`, your figures are smaller, and MAX AVAIL is correspondingly larger.)
 
 Change it and watch:
 

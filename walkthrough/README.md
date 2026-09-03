@@ -76,7 +76,10 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 | 26 — Add and remove a node | [ex26-add-remove-node.md](ex26-add-remove-node.md) | Ceph |
 | 27 — Recover a full cluster | [ex27-full-cluster.md](ex27-full-cluster.md) | Ceph |
 
-† needs the load-balancer build: `ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`
+† needs the load-balancer build, which is on by default. Built with
+`ENABLE_NETWORK_LOADBALANCER=no`? Add it with
+`ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`, or skip these three —
+the end of Exercise 9 covers the same ground with HAProxy in a guest.
 
 ## Screenshot naming
 

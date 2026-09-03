@@ -27,6 +27,8 @@ macOS (Apple Silicon, macOS 26)
 - **S3** through Ceph RGW, and **NFSv4.1** through CephFS + NFS-Ganesha
 - **Neutron ML2/OVS** with a flat external network on `br-ex` and VXLAN tenant
   networks, so floating IPs work from macOS
+- **Octavia load balancing** in `ACTIVE_STANDBY`, with an amphora image built for
+  aarch64 — no prebuilt one exists
 - Survives a machine restart, including device renumbering
 
 ## Requirements
@@ -57,14 +59,24 @@ The third script runs inside the VM and is baked into the image, so after loggin
 (`container machine run -n openstack-lab`, then `sudo -i`) you can just run
 `provision-lab`.
 
-**Network load balancing is optional and off by default.** It is the most expensive
-thing in the lab — four more containers, an amphora image built from source, and two
-1 GB amphorae per load balancer — so a smaller machine should leave it off:
+**Network load balancing is on by default.** Measured on a 24 GB machine, the four
+Octavia containers cost 1.4 GB all the time — ordinary here, where `neutron_server`
+alone is 0.9 GB — and the two amphorae cost 2 GB more, but only while exercises 9–11
+are running. Peak observed was 19.9 GB of 24 GB.
+
+If your machine is tighter, two ways out, in this order:
 
 ```bash
-ENABLE_NETWORK_LOADBALANCER=yes provision-lab                 # fresh build
-ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla # add to a built lab
+ENABLE_NETWORK_LOADBALANCER=no provision-lab     # rebuild without it
 ```
+
+Everything except exercises 9–11 is unchanged, and Exercise 9 still teaches round-robin
+and sticky sessions using HAProxy in a guest. Or raise `MACHINE_MEMORY` in
+`02-build-image.sh` to **26G**, or **28G** to be comfortable — that recreates the
+machine, so decide before building the lab rather than after.
+
+It costs one-off resources too: about 3 minutes to build the amphora image, and 7.5 GiB
+of the 45 GiB Ceph cluster once it is in Glance (2.5 GiB raw, charged at `size = 3`).
 
 The service behind it is OpenStack's Octavia, which is what the settings and error
 messages say; the flag names the capability so you do not have to know that first.
@@ -115,8 +127,9 @@ with the day-2 situation it covers, so you know why you are doing it:
 | G. Ceph day-2 | maintenance mode · restricted credentials · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · node add/remove |
 | H. Recovery | recovering a cluster that has filled up |
 
-† Part D needs the optional load-balancer build — see below. Without it, the end of
-Exercise 9 teaches round-robin and sticky sessions using HAProxy in a guest instead.
+† Part D needs the load-balancer build, which is on by default — see below. Built
+without it, the end of Exercise 9 teaches round-robin and sticky sessions using HAProxy
+in a guest instead.
 
 Peak cost is two 512 MB guests, or two guests plus two 1 GB amphorae across Part D. The lab image is a 248 MB Alpine build, not a distro
 cloud image — Exercise 2 explains why and how it is made.
