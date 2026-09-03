@@ -300,6 +300,11 @@ ENV container container
 
 # iptables is explicit: kolla-net-setup.sh needs it for the Horizon DNAT and it is
 # otherwise only pulled in as somebody else's dependency.
+# isc-dhcp-client is here for Octavia: Kolla's octavia-interface.service runs a
+# hard-coded /sbin/dhclient against the o-hm0 port, and Ubuntu 24.04 stopped
+# shipping it. The image clears /var/lib/apt/lists at the end, so a runtime
+# 'apt-get install' cannot find it without an update first -- baking it in is
+# both faster and one less thing to fail during provisioning.
 RUN apt-get update && apt-get install -y \\
     dbus systemd openssh-server net-tools iproute2 iputils-ping \\
     qemu-system-arm qemu-utils libvirt-daemon-system \\
@@ -307,6 +312,7 @@ RUN apt-get update && apt-get install -y \\
     python3-yaml python3-jinja2 python3-requests \\
     curl wget git vim-tiny man sudo cpu-checker uuid-runtime s3cmd \\
     gdisk parted kpartx dosfstools e2fsprogs debootstrap nfs-common \\
+    isc-dhcp-client \\
     python3-dev python3-venv python3-apt libffi-dev libssl-dev libdbus-glib-1-dev \\
     kmod && \\
     apt-get clean && rm -rf /var/lib/apt/lists/*

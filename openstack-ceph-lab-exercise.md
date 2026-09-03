@@ -1613,11 +1613,16 @@ are a directory you create.
 The VM's kernel has no CephFS driver, so mount it with the userspace client:
 
 ```bash
-apt-get install -y ceph-fuse
+apt-get update && apt-get install -y ceph-fuse
 incus exec ceph-node1 -- cat /etc/ceph/ceph.client.admin.keyring > /etc/ceph/ceph.client.admin.keyring
 chmod 600 /etc/ceph/ceph.client.admin.keyring
 mkdir -p /mnt/cephfs && ceph-fuse -n client.admin /mnt/cephfs
 ```
+
+**`apt-get update` first, always, in this VM.** The machine image ends with
+`rm -rf /var/lib/apt/lists/*`, so a freshly built machine has no package lists and apt
+answers `E: Unable to locate package` for anything you ask for — including packages
+that certainly exist. It is not a broken mirror or a missing repository.
 
 Now the whole feature:
 

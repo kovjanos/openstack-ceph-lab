@@ -15,3 +15,8 @@ vmlinux-arm64
 
 # macOS
 .DS_Store
+
+# The lab's SSH private key, if you copy it out of the VM to reach workloads
+# from macOS (see "Reaching a workload from your own browser" in the exercises).
+labkey.pem
+*.pem

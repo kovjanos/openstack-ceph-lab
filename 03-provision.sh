@@ -803,10 +803,17 @@ EOF
     # so the unit dies with status=203/EXEC and the deploy fails on its very last
     # task, after everything else has succeeded. The OVS port is created and the MAC
     # is set; only the DHCP client is absent. isc-dhcp-client is still packaged.
+    # 02-build-image.sh bakes isc-dhcp-client into the image, so this is only a
+    # fallback for an older one. It has to run 'apt-get update' first: the image
+    # ends with 'rm -rf /var/lib/apt/lists/*', so a fresh machine has no package
+    # lists at all and apt answers "Unable to locate package" for anything.
     if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ] && [ ! -x /sbin/dhclient ]; then
+        info "installing isc-dhcp-client (older image -- octavia-interface needs /sbin/dhclient)"
+        DEBIAN_FRONTEND=noninteractive apt-get update -qq >/var/log/openstack-lab-apt.out 2>&1
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq isc-dhcp-client \
-            >/dev/null 2>&1 || die "could not install isc-dhcp-client for octavia-interface"
-        info "isc-dhcp-client installed (octavia-interface.service needs /sbin/dhclient)"
+            >>/var/log/openstack-lab-apt.out 2>&1 \
+            || { tail -5 /var/log/openstack-lab-apt.out | sed 's/^/    /' | tee -a "$LOG"
+                 die "could not install isc-dhcp-client -- see /var/log/openstack-lab-apt.out"; }
     fi
 
     # The amphora CA has to exist before deploy: the octavia role copies the certs
@@ -1145,9 +1152,14 @@ phase_87_octavia() {
     if [ ! -f "$img" ]; then
         info "building the amphora image -- 20-40 minutes, the slowest step in the lab"
 
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            qemu-utils debootstrap kpartx python3-venv uuid-runtime dosfstools git \
-            >>"$build_log" 2>&1 || die "could not install the amphora build prerequisites"
+        # All of these are in the image already; this only matters on an older one,
+        # and it needs the update for the same reason as isc-dhcp-client above.
+        if ! command -v debootstrap >/dev/null || ! command -v qemu-img >/dev/null; then
+            DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$build_log" 2>&1
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                qemu-utils debootstrap kpartx python3-venv uuid-runtime dosfstools git \
+                >>"$build_log" 2>&1 || die "could not install the amphora build prerequisites -- see $build_log"
+        fi
 
         if [ ! -x "$dib/bin/disk-image-create" ]; then
             python3 -m venv "$dib" >>"$build_log" 2>&1
