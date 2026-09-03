@@ -135,9 +135,16 @@ Ceph commands go through `incus exec ceph-node1 -- cephadm shell --`.
 |---|---|---|
 | Horizon | `http://<vm-ip>:8080/` | `admin`, domain `Default` |
 | Ceph dashboard | `https://<vm-ip>:8443/` | `admin` |
+| Grafana | `https://<vm-ip>:3000/` | none — anonymous viewing |
+| Prometheus | `http://<vm-ip>:9095/` | none |
+| Alertmanager | `http://<vm-ip>:9093/` | none |
 
-Both addresses and both passwords are printed by `provision-lab --only 90-verify`. The
-Ceph dashboard uses a self-signed certificate.
+Every address and both passwords are printed by `provision-lab --only 90-verify`.
+
+The monitoring stack is what `cephadm` deployed at bootstrap — nothing extra is
+installed. The Ceph dashboard embeds Grafana's panels, so open `https://<vm-ip>:3000/`
+once and accept its certificate before using any "Overall Performance" tab; it is a
+different self-signed certificate from the dashboard's.
 
 ## License
 

@@ -1084,6 +1084,26 @@ phase_90_verify() {
     ceph_do ceph fs ls 2>/dev/null | sed 's/^/    /' | tee -a "$LOG"
 
     VM_IP=$(ip -br addr show enp0s1 | awk '{print $3}' | cut -d/ -f1)
+
+    # cephadm deploys Grafana, Prometheus and Alertmanager at bootstrap, and the
+    # dashboard shows their graphs as iframes -- which the BROWSER loads, not the
+    # dashboard backend. Out of the box those iframes point at https://ceph-node1:3000,
+    # a name that resolves only inside the Incus network, so every "Overall
+    # Performance" tab renders as an empty grey frame.
+    #
+    # Proxy devices publish the three ports on the VM, and the URLs must then carry
+    # the VM address -- 127.0.0.1 works for s3cfg because that is read inside the VM,
+    # but these are resolved on macOS. The address changes on every machine start,
+    # which is why this is re-set on every verify run rather than once at bootstrap.
+    add_proxy ceph-node1 grafana      3000 "$CEPH_SUBNET.11:3000"
+    add_proxy ceph-node1 prometheus   9095 "$CEPH_SUBNET.11:9095"
+    add_proxy ceph-node1 alertmanager 9093 "$CEPH_SUBNET.11:9093"
+    ceph_do ceph dashboard set-grafana-api-url "https://$VM_IP:3000" >/dev/null || true
+    ceph_do ceph dashboard set-grafana-api-ssl-verify false >/dev/null || true
+    ceph_do ceph dashboard set-alertmanager-api-host "http://$VM_IP:9093" >/dev/null || true
+    ceph_do ceph dashboard set-prometheus-api-host "http://$VM_IP:9095" >/dev/null || true
+    info "monitoring URLs point at $VM_IP (grafana 3000, prometheus 9095, alertmanager 9093)"
+
     horizon_pw=$(sudo -u kolla grep '^keystone_admin_password:' /etc/kolla/passwords.yml | awk '{print $2}')
     s3_ak=$(awk -F' = ' '/^access_key/{print $2}' "$SHARED_DIR/s3cfg" 2>/dev/null)
 
@@ -1094,6 +1114,9 @@ phase_90_verify() {
     Ceph dashboard https://$VM_IP:8443/    admin / $DASHBOARD_PASSWORD
     S3 (Ceph RGW)  http://$VM_IP:$RGW_VM_PORT/     access key $s3_ak, config in $SHARED_DIR/s3cfg
     NFS export     $VM_IP:/labshare        mount -t nfs4 -o proto=tcp,port=2049
+    Grafana        https://$VM_IP:3000/    embedded in the Ceph dashboard; self-signed
+    Prometheus     http://$VM_IP:9095/
+    Alertmanager   http://$VM_IP:9093/
 
     The VM address changes on every machine recreate. Re-read it with
     'ip -br addr show enp0s1'. Test the Horizon forward FROM macOS -- the DNAT

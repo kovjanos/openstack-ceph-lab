@@ -2249,12 +2249,55 @@ subcommands.)
 Remove the proxy later with
 `sudo incus config device remove ceph-node1 dashboard`.
 
+#### Grafana, Prometheus and Alertmanager
+
+`cephadm` deploys the whole monitoring stack at bootstrap — Grafana on 3000,
+Prometheus on 9095, Alertmanager on 9093/9094, node-exporter and ceph-exporter on every
+host. Nothing extra has to be installed.
+
+They need the same two hops as the dashboard, and one thing more. The dashboard shows
+Grafana's graphs in an **iframe**, which the *browser* loads — so the URL has to be one
+macOS can resolve. Out of the box it is `https://ceph-node1:3000`, a name that exists
+only inside the Incus network, and every "Overall Performance" tab renders as an empty
+grey frame with a broken-image icon:
+
+```bash
+for p in 3000:grafana 9095:prometheus 9093:alertmanager; do
+  sudo incus config device add ceph-node1 "${p#*:}" proxy \
+    listen=tcp:0.0.0.0:"${p%%:*}" connect=tcp:10.100.0.11:"${p%%:*}"
+done
+
+VM_IP=$(ip -br addr show enp0s1 | awk '{print $3}' | cut -d/ -f1)
+sudo incus exec ceph-node1 -- cephadm shell -- ceph dashboard set-grafana-api-url "https://$VM_IP:3000"
+sudo incus exec ceph-node1 -- cephadm shell -- ceph dashboard set-grafana-api-ssl-verify false
+sudo incus exec ceph-node1 -- cephadm shell -- ceph dashboard set-prometheus-api-host "http://$VM_IP:9095"
+sudo incus exec ceph-node1 -- cephadm shell -- ceph dashboard set-alertmanager-api-host "http://$VM_IP:9093"
+```
+
+**The URL must carry the VM address, not `127.0.0.1`.** This is the opposite of the
+`s3cfg` rule in 7.3: `s3cfg` is read by a client inside the VM, so loopback is right
+there; these URLs are resolved by a browser on macOS, so loopback is wrong. And since
+the VM address changes on every start, `03-provision.sh` re-sets all four on every
+`90-verify` run rather than once at bootstrap.
+
+Grafana has its own self-signed certificate on 3000, separate from the dashboard's on
+8443. Visit `https://<VM_IP>:3000/` once and accept it, or the iframe stays blank with
+no visible error — the dashboard cannot tell you that the browser refused a certificate
+it never saw.
+
+`set-grafana-api-ssl-verify false` covers the other direction: the dashboard backend
+also calls Grafana's API to check it is alive.
+
+Prometheus and Alertmanager are plain HTTP and need no exception. Prometheus at
+`http://<VM_IP>:9095/targets` is the quickest proof the whole chain works.
+
 ### 6.3 What survives a restart
 
 | Thing | Survives? |
 |---|---|
 | `kolla0`, `veth-ext`, Horizon DNAT | yes — `kolla-net-setup.service` (1.3) |
-| Incus proxy device for the Ceph dashboard | yes — stored in `/var/lib/incus` |
+| Incus proxy devices (dashboard, RGW, NFS, monitoring) | yes — stored in `/var/lib/incus` |
+| The dashboard's Grafana/Prometheus/Alertmanager URLs | **no** — they embed the VM address, so `90-verify` re-sets them |
 | The VM's vmnet address | **no** — changes on every machine recreate |
 
 Only the address you type into the browser changes. Re-check it with

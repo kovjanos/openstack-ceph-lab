@@ -1286,34 +1286,122 @@ timestamps.
 ## Exercise 22 — The monitoring you already have
 
 **The situation.** You want graphs of cluster throughput and OSD latency, and you are
-about to go and install Prometheus. You do not need to: `cephadm` deployed Prometheus,
-Grafana, Alertmanager and node-exporter when it bootstrapped the cluster.
+about to go and install Prometheus. You do not need to: `cephadm` deployed the whole
+stack when it bootstrapped the cluster, and it has been scraping ever since.
 
 ```bash
-incus exec ceph-node1 -- cephadm shell -- ceph orch ls | grep -E 'prometheus|grafana|alertmanager|node-exporter'
+incus exec ceph-node1 -- cephadm shell -- ceph orch ls | grep -E 'prometheus|grafana|alertmanager|exporter'
 ```
 
-The Ceph dashboard embeds the Grafana panels — open it from macOS:
+```
+alertmanager   ?:9093,9094      1/1
+ceph-exporter  ?:9926           3/3
+grafana        ?:3000           1/1
+node-exporter  ?:9100           3/3
+prometheus     ?:9095           1/1
+```
+
+Five services, none of which you installed. `node-exporter` and `ceph-exporter` run on
+every host; the other three run once.
+
+### Reaching them from macOS
+
+They listen on the Incus bridge, so each needs a proxy device the same way the
+dashboard does. `90-verify` adds all three and prints the URLs:
+
+```bash
+provision-lab --only 90-verify
+```
 
 ```
-https://<VM_IP>:8443/     admin / ChangeMeBeforeUse
+Ceph dashboard https://<VM_IP>:8443/    admin / ChangeMeBeforeUse
+Grafana        https://<VM_IP>:3000/    embedded in the Ceph dashboard; self-signed
+Prometheus     http://<VM_IP>:9095/
+Alertmanager   http://<VM_IP>:9093/
 ```
 
-Worth looking at specifically, because these are the numbers you will be asked about:
+**Visit `https://<VM_IP>:3000/` once and accept the certificate.** Grafana has its own
+self-signed cert, separate from the dashboard's. The dashboard shows Grafana's graphs
+in an iframe that your *browser* loads, so until the browser trusts that certificate
+every "Overall Performance" tab is an empty grey box — with no error message, because
+the dashboard never learns the browser refused it. This is the single most confusing
+failure in the whole monitoring setup, and it takes one click to avoid.
 
-- **Cluster → OSDs** — per-OSD latency and utilisation; the usual first stop when
-  something is "slow"
-- **Cluster → Hosts** — the Grafana panels for throughput and IOPS
-- **Pools** — per-pool usage and the MAX AVAIL from Exercise 20
-- **Object Gateway → Buckets** — the S3 side, including the `assets` bucket
+### The graphs
 
-Re-run the failure drill from Exercise 17 with the dashboard open. Watching the
-degraded-object count climb and then drain away is far more legible than reading
-`ceph -s` in a loop.
+With that done, the embedded panels work:
 
-**Alerting exists too.** Alertmanager is deployed with default Ceph rules — full OSDs,
-down daemons, slow ops. It has no receiver configured, so nothing is delivered; wiring
-one up is the natural next step beyond this lab.
+- **Cluster → Hosts → Overall Performance** — CPU, RAM and network per host
+- **Cluster → OSDs → Overall Performance** — read/write latency percentiles, PG
+  distribution, device class breakdown. The usual first stop when something is "slow"
+- **Cluster → Pools → Overall Performance** — per-pool throughput, next to the MAX
+  AVAIL from Exercise 20
+
+Grafana on its own at `https://<VM_IP>:3000/dashboards` has about twenty pre-built Ceph
+dashboards the embedded views only sample — *Ceph Cluster - Advanced*, *Ceph Pool
+Details*, *OSD device details*, *RBD Details*, *MDS Performance*, *RGW Overview*. No
+login needed: cephadm enables anonymous viewing so the iframes work, which means you
+get them too.
+
+### Where the numbers come from
+
+`http://<VM_IP>:9095/targets` lists every scrape target and its state:
+
+```
+ceph            1 / 1 up     http://ceph-node1:9283/metrics
+ceph-exporter   3 / 3 up     http://10.100.0.1{1,2,3}:9926/metrics
+nfs             1 / 1 up     http://10.100.0.11:9587/metrics
+node            3 / 3 up     http://10.100.0.1{1,2,3}:9100/metrics
+```
+
+If a Grafana panel is empty, check here before anything else — a panel with no data and
+a target that is `DOWN` are the same fault, and this page names it.
+
+The query browser at `http://<VM_IP>:9095/graph` takes PromQL directly. Two worth
+trying, because they are the ones you end up writing during an incident:
+
+```promql
+ceph_osd_op_r_latency_sum / ceph_osd_op_r_latency_count
+ceph_cluster_total_used_bytes / ceph_cluster_total_bytes
+```
+
+The first returns one series per OSD — average read latency in seconds, around 1 ms
+here. The second returns a single number that should match the capacity donut on the
+dashboard Overview exactly; if it does not, one of the two is reading stale data.
+
+### Alerting
+
+**Observability → Alerts** has three tabs. **Active Alerts** is empty on a healthy
+cluster — that page working at all is the proof Alertmanager is wired up. **Alert
+Rules** is the interesting one: 89 rules that Prometheus already evaluates, each with a
+severity and a firing delay.
+
+```
+CephDaemonCrash             critical  generic        60s
+CephDaemonSlowOps           warning   healthchecks   30s
+CephDeviceFailurePredicted  warning   osd            60s
+CephMonDown                 warning   mon            30s
+CephOSDNearFull             warning   osd           300s
+CephOSDFull                 critical  osd            60s
+CephPGsDamaged              critical  pgs           300s
+```
+
+`CephOSDNearFull` fires at 85% after five minutes. That is the alert that would have
+caught Exercise 24 while it was still recoverable, rather than at 95% when writes had
+already stopped.
+
+**Nothing is delivered, though.** Alertmanager has no receiver configured, so rules
+fire into the dashboard and stop there. Wiring one up — email, a webhook, Slack — is a
+`ceph orch` config change and the natural next step beyond this lab.
+
+### Do it with something happening
+
+Re-run the failure drill from Exercise 17 with **Cluster → OSDs** open. Watching the
+degraded-object count climb and drain away, and the latency panel spike, is far more
+legible than reading `ceph -s` in a loop — and it is how you will actually experience
+the real thing.
+
+**In the web UI.** All of it. This exercise is the web UI.
 
 **Cleanup.** Nothing.
 

@@ -22,10 +22,15 @@ That prints both URLs and both passwords:
 |---|---|---|
 | Horizon (OpenStack) | `http://<vm-ip>:8080/` | `admin`, domain `Default` |
 | Ceph dashboard | `https://<vm-ip>:8443/` | `admin` |
+| Grafana | `https://<vm-ip>:3000/` | none — anonymous viewing |
+| Prometheus | `http://<vm-ip>:9095/` | none |
+| Alertmanager | `http://<vm-ip>:9093/` | none |
 
-The Ceph dashboard uses a self-signed certificate. Your browser will warn; accept it
-once per address. Because the address changes, you will accept it again after a
-restart.
+**Two separate certificates.** The Ceph dashboard (8443) and Grafana (3000) each have
+their own self-signed certificate. Accept both — and accept 3000 *before* opening any
+"Overall Performance" tab, or the embedded Grafana panels render as empty grey frames
+with no error. Because the VM address changes on every start, both exceptions have to
+be accepted again after a restart.
 
 The screenshots below were taken at `192.168.64.62`. Yours will differ — the addresses
 inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
@@ -35,7 +40,7 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 - **Horizon** covers exercises 1–8 and 11–14: networks, instances, volumes, security
   groups, Heat, quotas, projects.
 - **The Ceph dashboard** covers exercises 9, 10 and 15–24: file systems, object
-  gateway, hosts, OSDs, pools, logs.
+  gateway, hosts, OSDs, pools, logs, and the embedded Grafana panels.
 - Some steps have no UI at all. Where that is true the file says so rather than
   inventing a substitute.
 
@@ -64,7 +69,7 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 | 19 — CephFS snapshots | [ex19-cephfs-snapshots.md](ex19-cephfs-snapshots.md) | Ceph |
 | 20 — What replication costs | [ex20-replication-cost.md](ex20-replication-cost.md) | Ceph |
 | 21 — Verify the data | [ex21-scrub.md](ex21-scrub.md) | Ceph |
-| 22 — The monitoring you have | [ex22-monitoring.md](ex22-monitoring.md) | Ceph |
+| 22 — The monitoring you have | [ex22-monitoring.md](ex22-monitoring.md) | Ceph + Grafana + Prometheus |
 | 23 — Add and remove a node | [ex23-add-remove-node.md](ex23-add-remove-node.md) | Ceph |
 | 24 — Recover a full cluster | [ex24-full-cluster.md](ex24-full-cluster.md) | Ceph |
 
