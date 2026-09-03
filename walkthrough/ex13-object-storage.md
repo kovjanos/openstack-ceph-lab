@@ -1,6 +1,6 @@
-# Exercise 10 — Object storage for a workload (web UI)
+# Exercise 13 — Object storage for a workload (web UI)
 
-Guide section: [Exercise 10](../openstack-ceph-lab-exercise.md#exercise-10--object-storage-for-a-workload)
+Guide section: [Exercise 13](../openstack-ceph-lab-exercise.md#exercise-13--object-storage-for-a-workload)
 
 An application needs somewhere for uploads, artefacts or static assets. On a volume
 they are tied to one instance. Object storage is the answer, and the same Ceph cluster
@@ -14,7 +14,7 @@ registered as a Swift endpoint in Keystone, so its credentials come from
 
 **Ceph dashboard → Object → Buckets.**
 
-![Object gateway buckets](img/ex10-step01-ceph-object-gateway-buckets.png)
+![Object gateway buckets](img/ex13-step01-ceph-object-gateway-buckets.png)
 
 Owner `labuser` is the `radosgw-admin` user the build created, not an OpenStack user.
 The dashboard can create buckets, set quotas and browse objects from here.

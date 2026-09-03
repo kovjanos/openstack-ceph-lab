@@ -1,6 +1,6 @@
-# Exercise 13 — Quotas, and the ticket that starts "I can't launch anything" (web UI)
+# Exercise 16 — Quotas, and the ticket that starts "I can't launch anything" (web UI)
 
-Guide section: [Exercise 13](../openstack-ceph-lab-exercise.md#exercise-13--quotas-and-the-ticket-that-starts-i-cant-launch-anything)
+Guide section: [Exercise 16](../openstack-ceph-lab-exercise.md#exercise-16--quotas-and-the-ticket-that-starts-i-cant-launch-anything)
 
 A team's pipeline has stopped, every `server create` fails, and nothing in the logs
 looks broken. Nine times out of ten they have hit a quota.
@@ -9,7 +9,7 @@ looks broken. Nine times out of ten they have hit a quota.
 
 **Admin → Overview.**
 
-![Admin usage overview](img/ex13-step01-admin-usage-overview.png)
+![Admin usage overview](img/ex16-step01-admin-usage-overview.png)
 
 Per-project consumption with a date range, and a CSV download. This is the number to
 quote back in the ticket.
@@ -19,14 +19,14 @@ quote back in the ticket.
 **Identity → Projects** → the project's dropdown → **Modify Quotas**. Three tabs:
 Compute, Volume, Network.
 
-![Edit quotas](img/ex13-step02-edit-quotas-compute.png)
+![Edit quotas](img/ex16-step02-edit-quotas-compute.png)
 
 Reproduce the failure deliberately: set **Instances** to exactly the number currently
 running.
 
 ## Step 3 — What the user sees
 
-![Launch Instance disabled by quota](img/ex13-step03-launch-instance-disabled-quota.png)
+![Launch Instance disabled by quota](img/ex16-step03-launch-instance-disabled-quota.png)
 
 Horizon greys out **Launch Instance** and its tooltip reads "Launch Instance (Quota
 exceeded)". The CLI is blunter and more useful:
@@ -44,7 +44,7 @@ run the CLI command.
 
 **Project → Compute → Overview.**
 
-![Project limit summary at 100%](img/ex13-step04-project-limit-summary-full.png)
+![Project limit summary at 100%](img/ex16-step04-project-limit-summary-full.png)
 
 The Instances donut is full and red. Point users at this page — it saves a ticket.
 

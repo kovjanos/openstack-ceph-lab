@@ -1,6 +1,6 @@
-# Exercise 9 — Two workloads sharing one filesystem (web UI)
+# Exercise 12 — Two workloads sharing one filesystem (web UI)
 
-Guide section: [Exercise 9](../openstack-ceph-lab-exercise.md#exercise-9--two-workloads-sharing-one-filesystem)
+Guide section: [Exercise 12](../openstack-ceph-lab-exercise.md#exercise-12--two-workloads-sharing-one-filesystem)
 
 Two web servers must serve the same content. Copying files to both is how content
 drifts and one server starts serving yesterday's page.
@@ -13,7 +13,7 @@ Ceph dashboard, and the mount itself happens in the guest's cloud-init.
 
 **Ceph dashboard → File → File Systems.**
 
-![CephFS file systems](img/ex09-step01-ceph-file-systems-list.png)
+![CephFS file systems](img/ex12-step01-ceph-file-systems-list.png)
 
 One filesystem, `labfs`. Expanding the row gives Details, Directories, Subvolumes,
 Snapshots, Snapshot schedules and Clients — the Clients count tells you how many
@@ -24,7 +24,7 @@ mount actually worked.
 
 **Ceph dashboard → File → NFS.**
 
-![NFS cluster](img/ex09-step02-ceph-nfs-cluster-export.png)
+![NFS cluster](img/ex12-step02-ceph-nfs-cluster-export.png)
 
 The cluster is `labnfs`, running on `ceph-node1` at `10.100.0.11:2049`.
 

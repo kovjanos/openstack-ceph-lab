@@ -57,6 +57,18 @@ The third script runs inside the VM and is baked into the image, so after loggin
 (`container machine run -n openstack-lab`, then `sudo -i`) you can just run
 `provision-lab`.
 
+**Network load balancing is optional and off by default.** It is the most expensive
+thing in the lab — four more containers, an amphora image built from source, and two
+1 GB amphorae per load balancer — so a smaller machine should leave it off:
+
+```bash
+ENABLE_NETWORK_LOADBALANCER=yes provision-lab                 # fresh build
+ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla # add to a built lab
+```
+
+The service behind it is OpenStack's Octavia, which is what the settings and error
+messages say; the flag names the capability so you do not have to know that first.
+
 It is checkpointed per phase under `/var/lib/openstack-lab/state`, so a failed run
 resumes where it stopped:
 
@@ -96,12 +108,17 @@ with the day-2 situation it covers, so you know why you are doing it:
 |---|---|
 | A. Foundation | bootstrap the tenant · build the lab image |
 | B. One workload | first workload · persistent disk · snapshot & restore · grow a volume |
-| C. Two workloads | network isolation · floating-IP failover · shared NFS · object storage |
-| D. Platform operations | encrypted volumes with Barbican · Heat · quotas · projects & RBAC |
-| E. Ceph day-2 | maintenance mode · restricted credentials · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · node add/remove |
-| F. Recovery | recovering a cluster that has filled up |
+| C. Two workloads | network isolation · floating-IP failover |
+| D. Load balancing † | one address two servers · sticky sessions · the load balancer died |
+| E. Shared storage | shared NFS · object storage |
+| F. Platform operations | encrypted volumes with Barbican · Heat · quotas · projects & RBAC |
+| G. Ceph day-2 | maintenance mode · restricted credentials · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · node add/remove |
+| H. Recovery | recovering a cluster that has filled up |
 
-Peak cost is two 512 MB guests. The lab image is a 248 MB Alpine build, not a distro
+† Part D needs the optional load-balancer build — see below. Without it, the end of
+Exercise 9 teaches round-robin and sticky sessions using HAProxy in a guest instead.
+
+Peak cost is two 512 MB guests, or two guests plus two 1 GB amphorae across Part D. The lab image is a 248 MB Alpine build, not a distro
 cloud image — Exercise 2 explains why and how it is made.
 
 [`walkthrough/`](walkthrough/README.md) has the same exercises driven through Horizon

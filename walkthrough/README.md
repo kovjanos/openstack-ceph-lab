@@ -37,9 +37,9 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 
 ## Which UI covers what
 
-- **Horizon** covers exercises 1–8 and 11–14: networks, instances, volumes, security
-  groups, Heat, quotas, projects.
-- **The Ceph dashboard** covers exercises 9, 10 and 15–24: file systems, object
+- **Horizon** covers exercises 1–11 and 14–17: networks, instances, volumes, security
+  groups, load balancers, Heat, quotas, projects.
+- **The Ceph dashboard** covers exercises 12, 13 and 18–27: file systems, object
   gateway, hosts, OSDs, pools, logs, and the embedded Grafana panels.
 - Some steps have no UI at all. Where that is true the file says so rather than
   inventing a substitute.
@@ -56,22 +56,27 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 | 6 — Grow a volume in use | [ex06-grow-volume.md](ex06-grow-volume.md) | Horizon |
 | 7 — Network isolation | [ex07-network-isolation.md](ex07-network-isolation.md) | Horizon |
 | 8 — Floating IP failover | [ex08-floating-ip-failover.md](ex08-floating-ip-failover.md) | Horizon |
-| 9 — Shared filesystem | [ex09-shared-filesystem.md](ex09-shared-filesystem.md) | Ceph |
-| 10 — Object storage | [ex10-object-storage.md](ex10-object-storage.md) | Ceph |
-| 11 — Encryption at rest | [ex11-encrypted-volume.md](ex11-encrypted-volume.md) | Horizon |
-| 12 — Heat | [ex12-heat.md](ex12-heat.md) | Horizon |
-| 13 — Quotas | [ex13-quotas.md](ex13-quotas.md) | Horizon |
-| 14 — A second tenant | [ex14-second-tenant.md](ex14-second-tenant.md) | Horizon |
-| 15 — Ceph maintenance mode | [ex15-maintenance-mode.md](ex15-maintenance-mode.md) | Ceph |
-| 16 — Restricted Ceph user | [ex16-restricted-ceph-user.md](ex16-restricted-ceph-user.md) | Ceph |
-| 17 — Lose a disk | [ex17-lose-a-disk.md](ex17-lose-a-disk.md) | Ceph |
-| 18 — Replace a disk | [ex18-replace-a-disk.md](ex18-replace-a-disk.md) | Ceph |
-| 19 — CephFS snapshots | [ex19-cephfs-snapshots.md](ex19-cephfs-snapshots.md) | Ceph |
-| 20 — What replication costs | [ex20-replication-cost.md](ex20-replication-cost.md) | Ceph |
-| 21 — Verify the data | [ex21-scrub.md](ex21-scrub.md) | Ceph |
-| 22 — The monitoring you have | [ex22-monitoring.md](ex22-monitoring.md) | Ceph + Grafana + Prometheus |
-| 23 — Add and remove a node | [ex23-add-remove-node.md](ex23-add-remove-node.md) | Ceph |
-| 24 — Recover a full cluster | [ex24-full-cluster.md](ex24-full-cluster.md) | Ceph |
+| 9 — One address, two servers † | [ex09-loadbalancer.md](ex09-loadbalancer.md) | Horizon |
+| 10 — Sticky sessions † | [ex10-sticky-sessions.md](ex10-sticky-sessions.md) | Horizon |
+| 11 — The load balancer died † | [ex11-lb-failover.md](ex11-lb-failover.md) | Horizon + CLI |
+| 12 — Shared filesystem | [ex12-shared-filesystem.md](ex12-shared-filesystem.md) | Ceph |
+| 13 — Object storage | [ex13-object-storage.md](ex13-object-storage.md) | Ceph |
+| 14 — Encryption at rest | [ex14-encrypted-volume.md](ex14-encrypted-volume.md) | Horizon |
+| 15 — Heat | [ex15-heat.md](ex15-heat.md) | Horizon |
+| 16 — Quotas | [ex16-quotas.md](ex16-quotas.md) | Horizon |
+| 17 — A second tenant | [ex17-second-tenant.md](ex17-second-tenant.md) | Horizon |
+| 18 — Ceph maintenance mode | [ex18-maintenance-mode.md](ex18-maintenance-mode.md) | Ceph |
+| 19 — Restricted Ceph user | [ex19-restricted-ceph-user.md](ex19-restricted-ceph-user.md) | Ceph |
+| 20 — Lose a disk | [ex20-lose-a-disk.md](ex20-lose-a-disk.md) | Ceph |
+| 21 — Replace a disk | [ex21-replace-a-disk.md](ex21-replace-a-disk.md) | Ceph |
+| 22 — CephFS snapshots | [ex22-cephfs-snapshots.md](ex22-cephfs-snapshots.md) | Ceph |
+| 23 — What replication costs | [ex23-replication-cost.md](ex23-replication-cost.md) | Ceph |
+| 24 — Verify the data | [ex24-scrub.md](ex24-scrub.md) | Ceph |
+| 25 — The monitoring you have | [ex25-monitoring.md](ex25-monitoring.md) | Ceph + Grafana + Prometheus |
+| 26 — Add and remove a node | [ex26-add-remove-node.md](ex26-add-remove-node.md) | Ceph |
+| 27 — Recover a full cluster | [ex27-full-cluster.md](ex27-full-cluster.md) | Ceph |
+
+† needs the load-balancer build: `ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`
 
 ## Screenshot naming
 

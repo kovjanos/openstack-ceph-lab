@@ -12,7 +12,7 @@ The Launch Instance wizard is where every field of `openstack server create` liv
 
 ![Launch Instance details tab](img/ex03-step01-launch-instance-details-tab.png)
 
-The quota donut on the right updates as you go. It is the same number Exercise 13
+The quota donut on the right updates as you go. It is the same number Exercise 16
 deliberately exhausts.
 
 ## Step 2 — Source

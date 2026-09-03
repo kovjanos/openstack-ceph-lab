@@ -1,6 +1,6 @@
-# Exercise 22 — The monitoring you already have (web UI)
+# Exercise 25 — The monitoring you already have (web UI)
 
-Guide section: [Exercise 22](../openstack-ceph-lab-exercise.md#exercise-22--the-monitoring-you-already-have)
+Guide section: [Exercise 25](../openstack-ceph-lab-exercise.md#exercise-25--the-monitoring-you-already-have)
 
 You want graphs of cluster throughput and OSD latency and you are about to install
 Prometheus. You do not need to: `cephadm` deployed Grafana, Prometheus, Alertmanager,
@@ -12,13 +12,13 @@ This exercise is almost entirely web UI, so it gets the most screenshots.
 
 `https://<vm-ip>:8443/` → **Overview**.
 
-![Ceph dashboard overview](img/ex22-step01-ceph-dashboard-overview.png)
+![Ceph dashboard overview](img/ex25-step01-ceph-dashboard-overview.png)
 
 Everything a status page should have, in one screen:
 
 - **Details** — cluster ID, orchestrator, and the exact Ceph version (20.2.2 tentacle)
 - **Status** — the health check, green here
-- **Capacity** — 4.2 GiB of 45 GiB raw. This is raw, before replication; Exercise 20
+- **Capacity** — 4.2 GiB of 45 GiB raw. This is raw, before replication; Exercise 23
   explains why the usable figure is much smaller
 - **Cluster Utilization** — throughput, IOPS and OSD apply/commit latency over the last
   hour. These are the dashboard's own charts, drawn from the mgr module, not Grafana —
@@ -29,7 +29,7 @@ Everything a status page should have, in one screen:
 
 **Administration → Services.**
 
-![Services showing the monitoring stack](img/ex22-step05-services-monitoring-stack.png)
+![Services showing the monitoring stack](img/ex25-step05-services-monitoring-stack.png)
 
 `alertmanager`, `ceph-exporter`, `grafana`, `node-exporter`, `prometheus` — five
 services nobody installed, sitting next to the mons and OSDs. `node-exporter` and
@@ -62,7 +62,7 @@ new origin and a new exception.
 
 **Cluster → Hosts → Overall Performance.**
 
-![Hosts overall performance](img/ex22-step03-hosts-overall-performance-grafana.png)
+![Hosts overall performance](img/ex25-step03-hosts-overall-performance-grafana.png)
 
 This is Grafana's *Host Overview* dashboard in kiosk mode, embedded. OSD hosts, average
 CPU and RAM, then CPU Busy and Network Load broken out per host — all three ceph nodes
@@ -73,7 +73,7 @@ they work.
 
 **Cluster → OSDs → Overall Performance.**
 
-![OSDs overall performance](img/ex22-step04-osds-overall-performance-grafana.png)
+![OSDs overall performance](img/ex25-step04-osds-overall-performance-grafana.png)
 
 The one to know. Read and write latency with AVG, MAX and 95th percentile, the highest
 recent latencies as a table, device class and backend breakdown, and the distribution
@@ -86,7 +86,7 @@ and that single fact decides where you look next.
 
 **Cluster → Pools → Overall Performance.**
 
-![Pools overall performance](img/ex22-step10-pools-overall-performance-grafana.png)
+![Pools overall performance](img/ex25-step10-pools-overall-performance-grafana.png)
 
 Top-K client IOPS and bandwidth per pool. Useful for the question the Pools list cannot
 answer: not "how big is this pool" but "which pool is busy right now".
@@ -95,7 +95,7 @@ answer: not "how big is this pool" but "which pool is busy right now".
 
 `https://<vm-ip>:3000/dashboards`
 
-![Grafana pre-built dashboards](img/ex22-step09-grafana-prebuilt-dashboards.png)
+![Grafana pre-built dashboards](img/ex25-step09-grafana-prebuilt-dashboards.png)
 
 The embedded views are three of about twenty pre-built dashboards. *Ceph Cluster -
 Advanced*, *Ceph Pool Details*, *OSD device details*, *RBD Details*, *MDS Performance*,
@@ -108,7 +108,7 @@ the dashboard's iframes work without credentials, which means you get read acces
 
 `http://<vm-ip>:9095/targets`
 
-![Prometheus targets](img/ex22-step08-prometheus-targets.png)
+![Prometheus targets](img/ex25-step08-prometheus-targets.png)
 
 Every scrape target and its state: `ceph` 1/1, `ceph-exporter` 3/3, `nfs` 1/1, `node`
 3/3, all UP, with the last scrape age and duration.
@@ -129,21 +129,21 @@ two disagree, one of them is stale.
 
 **Observability → Alerts → Active Alerts.**
 
-![Active alerts](img/ex22-step06-observability-alerts.png)
+![Active alerts](img/ex25-step06-observability-alerts.png)
 
 Empty, because the cluster is healthy. The page rendering at all is the proof
 Alertmanager is reachable — before its proxy device existed, this tab errored.
 
 **Alert Rules** is the tab worth reading.
 
-![Alert rules](img/ex22-step07-alert-rules-list.png)
+![Alert rules](img/ex25-step07-alert-rules-list.png)
 
 89 rules Prometheus is already evaluating, each with a severity and a firing delay:
 `CephDaemonCrash` (critical, 60s), `CephDaemonSlowOps` (warning, 30s), `CephMonDown`,
 `CephPGsDamaged`, `CephDeviceFailurePredicted`.
 
 `CephOSDNearFull` fires at 85% after five minutes. That is the alert that would have
-caught [Exercise 24](ex24-full-cluster.md) while the cluster was still writable, rather
+caught [Exercise 27](ex27-full-cluster.md) while the cluster was still writable, rather
 than at 95% when deletes had already become impossible.
 
 **Nothing is delivered, though.** Alertmanager has no receiver configured, so every rule
@@ -153,7 +153,7 @@ fires into this page and stops. Wiring one up is the natural next step past this
 
 **Observability → Logs.**
 
-![Ceph cluster logs](img/ex22-step02-ceph-cluster-logs.png)
+![Ceph cluster logs](img/ex25-step02-ceph-cluster-logs.png)
 
 Three tabs, and the distinction matters when you are answering "who did this?":
 
@@ -170,7 +170,7 @@ Metrics tell you something changed; these tell you what changed it.
 
 ## Do it with something happening
 
-Re-run the [Exercise 17](ex17-lose-a-disk.md) failure drill with **Cluster → OSDs**
+Re-run the [Exercise 20](ex20-lose-a-disk.md) failure drill with **Cluster → OSDs**
 open. Watching the degraded-object count climb and drain away, and the latency panel
 spike with it, is far more legible than reading `ceph -s` in a loop — and it is how you
 will actually experience the real thing.

@@ -44,14 +44,20 @@ and you get errors like `unrecognized arguments: heat webstack` from a perfectly
 Put it in your shell profile, or prefix commands with the long form. Ceph commands run
 through `incus exec ceph-node1 -- cephadm shell --`.
 
-**Two CLI plugins are missing by default.** Kolla's venv has no Heat or Barbican
-client, so `openstack stack ...` and `openstack secret ...` fail with "is not an
-openstack command". Install them once:
+**Three CLI plugins are missing by default.** Kolla's venv has no Heat, Barbican or
+Octavia client, so `openstack stack ...`, `openstack secret ...` and
+`openstack loadbalancer ...` are not openstack commands at all. The last one is the
+most confusing, because the CLI answers with a list of `container ...` suggestions,
+which reads like a broken load balancer rather than an absent client. Install them
+once:
 
 ```bash
 sudo -u kolla bash -lc '. /opt/kolla/venv/bin/activate && \
-  pip install python-heatclient python-barbicanclient'
+  pip install python-heatclient python-barbicanclient python-octaviaclient'
 ```
+
+(`provision-lab` installs the Octavia one for you when the load-balancer build is
+enabled; the other two are always needed.)
 
 ## Resource budget — read this first
 
@@ -80,22 +86,35 @@ later one uses it; the rest should be torn down or you will run out of memory.
 ## Running order
 
 The exercises are ordered so that state built once is reused, rather than rebooting
-instances for each. Peak cost is two guests (1 GB) — comfortable on a 24 GB machine.
+instances for each. Peak cost is two guests (1 GB), or three guests plus two amphorae
+(3 GB) across the load-balancing part — both fit a 24 GB machine.
 
-| Part | Exercises | Running |
-|---|---|---|
-| **A. Foundation** | 1 bootstrap · 2 build the lab image | nothing |
-| **B. One workload** | 3 first workload · 4 persistent disk · 5 snapshot & restore · 6 instance → image | 1 guest |
-| **C. Two workloads** | 7 network isolation · 8 floating-IP failover · 9 shared NFS · 10 object storage | 2 guests |
-| **D. Platform operations** | 11 encrypted volume · 12 Heat · 13 quotas · 14 projects & RBAC | 2 guests |
-| **E. Ceph day-2** | 15 maintenance mode · 16 restricted user · 17 failure drill · 18 disk replacement · 19 CephFS snapshots · 20 replication cost · 21 scrub · 22 monitoring · 23 node add/remove | 1 guest, kept deliberately |
-| **F. Recovery** | 24 full-cluster recovery · teardown | 1 guest |
+| Part | Exercises | Running | Needs |
+|---|---|---|---|
+| **A. Foundation** | 1 bootstrap · 2 build the lab image | nothing | |
+| **B. One workload** | 3 first workload · 4 persistent disk · 5 snapshot & restore · 6 grow a volume | 1 guest | |
+| **C. Two workloads** | 7 network isolation · 8 floating-IP failover | 2 guests | |
+| **D. Load balancing** | 9 one address two servers · 10 sticky sessions · 11 the load balancer died | 2 guests + 2 amphorae | LB build |
+| **E. Shared storage** | 12 shared NFS · 13 object storage | 2 guests | |
+| **F. Platform operations** | 14 encrypted volume · 15 Heat · 16 quotas · 17 projects & RBAC | 2 guests | |
+| **G. Ceph day-2** | 18 maintenance mode · 19 restricted user · 20 failure drill · 21 disk replacement · 22 CephFS snapshots · 23 replication cost · 24 scrub · 25 monitoring · 26 node add/remove | 1 guest, kept deliberately | |
+| **H. Recovery** | 27 full-cluster recovery · teardown | 1 guest | |
 
-Part E keeps a workload running on purpose. Watching a web page keep serving while an
+**Part D needs the load-balancer build.** It is off by default because two amphorae at
+1 GB each is the most expensive thing in this lab. Turn it on with
+`ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`, or skip the part — the
+end of Exercise 9 teaches round-robin and sticky sessions with HAProxy in a guest for
+the price of one more instance. What it cannot teach is Exercise 11.
+
+Exercise 9 retires the two guests from Part C before booting its own, and Exercise 11
+tears the load balancer down before Part G. Following the order keeps the peak at the
+figures above; skipping cleanups does not.
+
+Part G keeps a workload running on purpose. Watching a web page keep serving while an
 OSD is destroyed is the entire point of replication, and it costs nothing to leave one
 512 MB instance up.
 
-Do Part F last: filling the cluster disrupts everything else, and its cleanup is the
+Do Part H last: filling the cluster disrupts everything else, and its cleanup is the
 teardown anyway.
 
 ---
@@ -543,12 +562,408 @@ OS floating ip list -f value | awk '$3=="None"{print $1}' | xargs -r -n1 \
 **In the web UI.** Horizon → Project → Compute → Instances → the instance's dropdown →
 Associate / Disassociate Floating IP.
 
-**Cleanup.** Leave the floating IP wherever you like; keep both instances for
-Exercise 9.
+**Cleanup.** Leave the floating IP wherever you like. Exercise 9 retires `web` and
+`backend` and boots a matched pair in their place, so nothing here needs keeping.
 
 ---
 
-## Exercise 9 — Two workloads sharing one filesystem
+## Exercise 9 — One address, two servers
+
+> **Needs the load-balancer build.** Rebuild with
+> `ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`, or read the
+> **Without a load balancer** section at the end, which teaches the same thing with
+> HAProxy in a guest and costs nothing.
+
+**The situation.** One web server is a single point of failure and a capacity ceiling.
+You add a second, and immediately have two new problems: which address do users type,
+and what happens when one of the two dies at 3am? A floating IP moved by hand
+(Exercise 8) solves the first and not the second. This is the version that solves both.
+
+Exercise 8 left `web` and `backend` running. They serve different things on different
+ports, which is not what a load balancer pool wants — two interchangeable servers are.
+Retire them and boot a matched pair:
+
+```bash
+OS server delete web backend
+
+for n in 1 2; do
+  cat > /tmp/ud-lb$n.yaml <<EOF
+#cloud-config
+runcmd:
+  - [ sh, -c, "mkdir -p /srv/www && echo 'server-web$n' > /srv/www/index.html" ]
+  - [ sh, -c, "darkhttpd /srv/www --port 80 --daemon" ]
+EOF
+  OS server create lb-web$n --image lab-workload --flavor m1.lab --network private \
+    --security-group sg-web --key-name labkey --user-data /tmp/ud-lb$n.yaml
+done
+```
+
+Each serves its own name, which is the whole trick — you can see which one answered.
+
+### The load balancer
+
+```bash
+OS loadbalancer create --name lb1 --vip-subnet-id private-subnet
+OS loadbalancer show lb1 -f value -c provisioning_status
+```
+
+It sits in `PENDING_CREATE` for a while: Octavia is booting **two** amphorae, each a
+real instance running HAProxy. Measured here: **4 minutes 30 seconds** to `ACTIVE`. Two,
+not one, because the lab sets `octavia_loadbalancer_topology: ACTIVE_STANDBY` — which
+Exercise 11 exists to justify.
+
+```bash
+OS loadbalancer amphora list
+```
+
+```
+| id        | status    | role   | lb_network_ip | ha_ip      |
+| 6371c403… | ALLOCATED | MASTER | 10.1.0.130    | 10.0.0.162 |
+| d822204b… | ALLOCATED | BACKUP | 10.1.0.35     | 10.0.0.162 |
+```
+
+Two amphorae, one `ha_ip`. That shared address is the VIP, and VRRP decides which of
+them currently holds it.
+
+Now the parts that carry traffic. Each has to reach `ACTIVE` before the next is
+accepted, so this is a sequence, not a batch — `openstack loadbalancer show lb1` in
+between if a command is refused:
+
+```bash
+OS loadbalancer listener create --name web-listener --protocol HTTP --protocol-port 80 lb1
+OS loadbalancer pool create --name web-pool --lb-algorithm ROUND_ROBIN \
+  --listener web-listener --protocol HTTP
+
+for ip in <lb-web1-ip> <lb-web2-ip>; do
+  OS loadbalancer member create --address "$ip" --protocol-port 80 \
+    --subnet-id private-subnet web-pool
+done
+
+OS loadbalancer healthmonitor create --name web-hm --delay 5 --timeout 3 \
+  --max-retries 3 --type HTTP web-pool
+```
+
+Then an address users can actually reach:
+
+```bash
+VIP_PORT=$(OS loadbalancer show lb1 -f value -c vip_port_id)
+FIP=$(OS floating ip create public -f value -c floating_ip_address)
+OS floating ip set --port "$VIP_PORT" "$FIP"
+```
+
+### Watch it balance
+
+```bash
+for i in $(seq 1 10); do curl -s http://$FIP/; done | sort | uniq -c
+```
+
+```
+   5 server-web1
+   5 server-web2
+```
+
+Five each. `ROUND_ROBIN` is doing exactly what it says, and neither backend has any
+idea the other exists.
+
+### Now kill one
+
+This is the half that a hand-moved floating IP cannot do. `lb-web1` needs its own
+address first, because the floating IP now belongs to the VIP and is no longer a way
+into any backend:
+
+```bash
+BFIP=$(OS floating ip create public -f value -c floating_ip_address)
+OS server add floating ip lb-web1 "$BFIP"
+ssh -i /etc/openstack-lab/labkey.pem alpine@"$BFIP" 'sudo pkill darkhttpd'
+```
+
+Wait about 25 seconds — `--delay 5 --max-retries 3` means three consecutive failures
+before ejection — then:
+
+```bash
+OS loadbalancer member list web-pool -f value -c address -c operating_status
+for i in $(seq 1 10); do curl -s http://$FIP/; done | sort | uniq -c
+```
+
+```
+10.0.0.76   ERROR
+   10 server-web2
+```
+
+The dead backend is marked `ERROR` and every request goes to the survivor. **Nobody
+was paged and no address changed.** Put it back and watch the reverse:
+
+```bash
+ssh -i /etc/openstack-lab/labkey.pem alpine@"$BFIP" 'sudo darkhttpd /srv/www --port 80 --daemon'
+sleep 30
+for i in $(seq 1 6); do curl -s http://$FIP/; done | sort | uniq -c    # 3 and 3
+```
+
+The health monitor re-admits it on its own. That is the difference between a load
+balancer and a floating IP: one is a control loop, the other is a command you have to
+remember to run.
+
+**In the web UI.** Horizon → Project → Network → Load Balancers, with a create wizard
+that walks listener → pool → members → monitor in one pass.
+
+**Cleanup.** Keep everything — Exercises 10 and 11 use it.
+
+### Without a load balancer
+
+If you are running the smaller lab, the same two lessons are available for the price of
+one extra guest. Boot a third instance and put HAProxy in front of the same two
+backends:
+
+```bash
+cat > /tmp/ud-haproxy.yaml <<'EOF'
+#cloud-config
+packages: [ haproxy ]
+write_files:
+  - path: /etc/haproxy/haproxy.cfg
+    content: |
+      defaults
+        mode http
+        timeout connect 5s
+        timeout client 30s
+        timeout server 30s
+      frontend fe
+        bind *:80
+        default_backend be
+      backend be
+        balance roundrobin
+        cookie SRV insert indirect nocache
+        server web1 <lb-web1-ip>:80 check cookie web1
+        server web2 <lb-web2-ip>:80 check cookie web2
+runcmd:
+  - [ rc-service, haproxy, start ]
+EOF
+OS server create lb-manual --image lab-workload --flavor m1.lab --network private \
+  --security-group sg-web --key-name labkey --user-data /tmp/ud-haproxy.yaml
+```
+
+`balance roundrobin` and `check` give you Exercise 9; the `cookie` line gives you
+Exercise 10. What it does *not* give you is Exercise 11 — this HAProxy is a single
+instance, and when it dies the service dies with it. That gap is the argument for
+Octavia, and it is worth feeling rather than being told.
+
+---
+
+## Exercise 10 — The session that keeps logging out
+
+> **Needs the load-balancer build.** The HAProxy variant at the end of Exercise 9
+> demonstrates the same thing with a `cookie` line.
+
+**The situation.** A ticket arrives: "users get logged out at random". Nothing in the
+application logs looks wrong, and it only started when you added the second server. The
+application keeps session state in memory, round-robin sends alternate requests to the
+other machine, and half of them arrive with a session the server has never heard of.
+
+The real fix is to move session state out of the application. The fix you can ship this
+afternoon is to make each client stick to one backend.
+
+Octavia offers three kinds, and choosing wrongly is why this exercise exists.
+
+### SOURCE_IP — and why your browser test will lie to you
+
+```bash
+OS loadbalancer pool set --session-persistence type=SOURCE_IP web-pool
+sleep 15
+for i in $(seq 1 8); do curl -s http://$FIP/; done | sort | uniq -c
+```
+
+```
+   8 server-web2
+```
+
+Every request pinned to one backend. Now try to demonstrate it the obvious way — open a
+second browser, or a private window, and reload. **It stays on the same backend**,
+because the key is your source address and both windows share it.
+
+That is not a broken demo, it is the property itself: `SOURCE_IP` treats everyone behind
+one NAT, one office firewall or one corporate proxy as a single client. It pins them all
+to one backend, and your careful round-robin becomes a single server with a spare.
+
+### HTTP_COOKIE — the one that follows the browser
+
+```bash
+OS loadbalancer pool unset --session-persistence web-pool
+OS loadbalancer pool set --session-persistence type=HTTP_COOKIE web-pool
+sleep 15
+```
+
+One cookie jar, six requests — one browser session:
+
+```bash
+rm -f /tmp/jar
+for i in $(seq 1 6); do curl -s -b /tmp/jar -c /tmp/jar http://$FIP/; done | sort | uniq -c
+```
+
+```
+   6 server-web2
+```
+
+A fresh jar each time — six private windows:
+
+```bash
+for i in $(seq 1 6); do rm -f /tmp/j$i; curl -s -c /tmp/j$i http://$FIP/; done | sort | uniq -c
+```
+
+```
+   3 server-web1
+   3 server-web2
+```
+
+**This is the demo that works in a browser.** Load the page, reload as much as you like,
+you stay put. Open a private window and you may well land on the other server.
+
+### Look at the cookie
+
+```bash
+grep -v '^#' /tmp/jar
+```
+
+```
+172.24.4.199  FALSE  /  FALSE  0  SRV  84075c31-93ae-4a79-9ff9-f3dc54596354
+```
+
+The value is the **member UUID**. Check it against the pool:
+
+```bash
+OS loadbalancer member list web-pool
+```
+
+So the cookie in your browser's devtools names the exact backend you are pinned to,
+which turns "sticky sessions" from a diagram into something you can point at during an
+incident. `APP_COOKIE` is the third option: the same idea, but keyed on a cookie the
+application already sets, so the load balancer inserts nothing of its own.
+
+**In the web UI.** Horizon → Load Balancers → the pool → Edit, where session persistence
+is a dropdown with the same three values.
+
+**Cleanup.** Leave persistence off for Exercise 11, so you can see requests alternate:
+`OS loadbalancer pool unset --session-persistence web-pool`.
+
+---
+
+## Exercise 11 — The load balancer died
+
+> **Needs the load-balancer build**, and specifically `ACTIVE_STANDBY`. With
+> `SINGLE` topology there is one amphora, and this exercise is a plain outage.
+
+**The situation.** You put a load balancer in front of two servers so that losing one
+would not matter. Then someone asks the obvious question: what happens when the load
+balancer itself dies? If the answer is "everything stops", you have moved the single
+point of failure rather than removed it — which is exactly what the HAProxy-in-a-guest
+version at the end of Exercise 9 does.
+
+This lab runs `ACTIVE_STANDBY`, so there are two amphorae and a VRRP election between
+them. Here is what that buys, measured.
+
+```bash
+OS loadbalancer amphora list -f value -c id -c role -c status -c lb_network_ip
+```
+
+```
+6371c403…  MASTER  ALLOCATED  10.1.0.130
+d822204b…  BACKUP  ALLOCATED  10.1.0.35
+```
+
+Find the Nova instance behind the MASTER. **`compute_id` is not a column of
+`amphora list`** — it only appears in `amphora show`, and looking for it in the list is
+the first thing that goes wrong here:
+
+```bash
+AID=$(OS loadbalancer amphora list -f value -c id -c role | awk '$2=="MASTER"{print $1}')
+CID=$(OS loadbalancer amphora show "$AID" -f value -c compute_id)
+```
+
+Start polling in one shell:
+
+```bash
+while true; do curl -s --max-time 2 http://$FIP/ || echo '--- NO ANSWER ---'; sleep 2; done
+```
+
+Destroy the master in another — not a graceful shutdown, a hard delete, the way a
+hypervisor failure would look:
+
+```bash
+OS server delete "$CID"
+```
+
+```
+  2s server-web1
+  4s --- NO ANSWER ---
+  6s server-web2
+```
+
+**One failed request out of ninety.** The backup held the VIP within a single two-second
+poll, and traffic carried on round-robining across both backends as though nothing had
+happened.
+
+Run it twice and you will probably get a different number. The second run here dropped
+**nothing at all** — twelve consecutive polls, no gap — because VRRP completed the
+switch inside the two seconds between requests. So the honest figure is "at most one
+request, sometimes none", not a reliable constant. If you want to see the gap, poll
+faster than you think you need to.
+
+### The dashboard is behind the failure
+
+Immediately after the kill, `openstack loadbalancer amphora list` still reports the
+destroyed amphora as `ALLOCATED MASTER`, and the load balancer as `ACTIVE`, even though
+its instance is already gone from `openstack server list`. Detection took about **45
+seconds** here.
+
+That gap is worth internalising: **the data plane had already failed over before the
+control plane knew anything was wrong.** Traffic never depended on Octavia noticing —
+VRRP between the two amphorae handled it, and Octavia's job was only to rebuild the
+pair afterwards. A monitoring system watching `provisioning_status` would have reported
+a healthy load balancer throughout a genuine hardware failure.
+
+### It heals without being asked
+
+```bash
+OS loadbalancer amphora list -f value -c id -c role -c status
+```
+
+```
+6371c403…  MASTER  PENDING_DELETE     <- the one you destroyed
+d822204b…  BACKUP  ALLOCATED          <- now serving
+de47ef65…  None    BOOTING            <- a replacement, unprompted
+```
+
+The health manager noticed the master stop reporting, promoted the backup, and started
+building a new amphora to restore the pair. Nobody ran a command. `provisioning_status`
+sits at `PENDING_UPDATE` while that happens, and `operating_status` stays `ONLINE`
+throughout — worth reading carefully, because they answer different questions: one is
+"is Octavia currently changing this", the other is "is it serving traffic".
+
+### What it costs
+
+Two amphorae at 1 GB each, and briefly three during a rebuild. Measured on this lab at
+the peak: **19.6 GB used of 24 GB, 4.5 GB still available**, with two 512 MB backends and
+three amphorae alive at once. That is the price of the answer to "what happens when the
+load balancer dies", and it is why `octavia_loadbalancer_topology` is a setting rather
+than a default.
+
+**In the web UI.** Horizon shows the load balancer's status but not the amphorae behind
+it — they live in Octavia's own service project. `openstack loadbalancer amphora list`
+is the only view.
+
+**Cleanup.** Delete the load balancer and its backends before Part E; Ceph day-2 wants
+the memory:
+
+```bash
+OS loadbalancer delete lb1 --cascade
+OS server delete lb-web1 lb-web2
+```
+
+`--cascade` removes the listener, pool, members and monitor with it. Without it the
+delete is refused while children exist, which is the same lesson as Exercise 15's stack
+delete: things that were created as a unit should be deleted as one.
+
+---
+
+## Exercise 12 — Two workloads sharing one filesystem
 
 **The situation.** Two web servers must serve the same content. Copying files to both
 is how content drifts and one server starts serving yesterday's page. You want one
@@ -609,12 +1024,12 @@ In production you would align UIDs or configure idmapping instead.
 **In the web UI.** Nothing — this is Ceph and guest configuration, below the OpenStack
 API. The share is visible in the Ceph dashboard under Filesystems.
 
-**Cleanup.** Keep `share1` and `share2` for Exercise 10, then delete `share2`; a single
-guest is enough from Exercise 11 onward.
+**Cleanup.** Keep `share1` and `share2` for Exercise 13, then delete `share2`; a single
+guest is enough from Exercise 14 onward.
 
 ---
 
-## Exercise 10 — Object storage for a workload
+## Exercise 13 — Object storage for a workload
 
 **The situation.** An application needs somewhere to put user uploads, build
 artefacts or static assets. Putting them on a volume means they are tied to one
@@ -649,13 +1064,13 @@ RGW is not registered as a Swift endpoint in this lab.
 **In the web UI.** Ceph dashboard → Object Gateway → Buckets. Horizon has no view of
 it, since the gateway is not registered in Keystone.
 
-**Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 22 uses
+**Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 25 uses
 the cluster's usage figures. Delete `share2` now:
 `OS server delete share2`.
 
 ---
 
-## Exercise 11 — Encryption at rest, with the key in Barbican
+## Exercise 14 — Encryption at rest, with the key in Barbican
 
 **The situation.** An auditor asks where the encryption keys for your tenant volumes
 live, and whether an operator with access to the storage cluster could read customer
@@ -733,7 +1148,7 @@ Type. Barbican has no Horizon panel in this deployment.
 
 ---
 
-## Exercise 12 — Build the same thing declaratively with Heat
+## Exercise 15 — Build the same thing declaratively with Heat
 
 **The situation.** You built the web tier by hand in Exercise 7 and it worked. Now you
 need it in three environments, reproducibly, and someone must be able to review the
@@ -833,7 +1248,7 @@ and a resource topology view that is genuinely useful for seeing dependencies.
 
 ---
 
-## Exercise 13 — Quotas, and the ticket that starts "I can't launch anything"
+## Exercise 16 — Quotas, and the ticket that starts "I can't launch anything"
 
 **The situation.** A team files a ticket: their pipeline has stopped, every
 `server create` fails, and nothing in the logs looks broken. Nine times out of ten
@@ -876,7 +1291,7 @@ under Identity → Projects → the project's dropdown → Modify Quotas.
 
 ---
 
-## Exercise 14 — A second tenant, and proving they cannot see each other
+## Exercise 17 — A second tenant, and proving they cannot see each other
 
 **The situation.** A new team wants onto your cloud. Before you say yes you need to be
 able to demonstrate — not assert — that they cannot see or touch the existing team's
@@ -915,11 +1330,11 @@ above disappears, which is worth trying once to see the difference.
 **In the web UI.** Horizon → Identity → Projects / Users. Log out and back in as
 `demo-user` to see the same empty instance list.
 
-**Cleanup.** Keep the project — Exercise 15 uses it, and an idle project costs nothing.
+**Cleanup.** Keep the project — Exercise 18 uses it, and an idle project costs nothing.
 
 ---
 
-## Exercise 15 — Ceph maintenance mode
+## Exercise 18 — Ceph maintenance mode
 
 **The situation.** You need to reboot a storage node — a kernel update, a firmware
 patch, moving a machine. The moment the OSD goes down Ceph will start re-replicating
@@ -961,7 +1376,7 @@ idea, finer grained.
 
 ---
 
-## Exercise 16 — Scoping credentials with a restricted Ceph user
+## Exercise 19 — Scoping credentials with a restricted Ceph user
 
 **The situation.** A monitoring tool, or a backup script, wants Ceph credentials. It
 needs to read volumes; it has no business writing to them. Handing it `client.admin`
@@ -1009,13 +1424,13 @@ can do no harm, which is the point.
 
 ---
 
-## Exercise 17 — Lose a disk while the service is running
+## Exercise 20 — Lose a disk while the service is running
 
 **The situation.** 03:00, a disk fails. The page says `HEALTH_WARN` and a third of your
 objects are degraded. The question your manager will ask at 09:00 is not "what broke"
 but "was anything down?" — and you want to have already watched the answer.
 
-Keep a workload running for this. `share1` from Exercise 9 will do, serving a page you
+Keep a workload running for this. `share1` from Exercise 12 will do, serving a page you
 can poll throughout.
 
 ```bash
@@ -1068,9 +1483,9 @@ version of this exercise.
 
 ---
 
-## Exercise 18 — Replace a failed disk properly
+## Exercise 21 — Replace a failed disk properly
 
-**The situation.** The disk from Exercise 17 is not coming back — it is genuinely
+**The situation.** The disk from Exercise 20 is not coming back — it is genuinely
 dead. You need to remove it from the cluster, put a new one in, and get back to full
 redundancy. Doing this in the wrong order leaves half-states that block the
 replacement, which is why it is worth rehearsing before it is urgent.
@@ -1134,7 +1549,7 @@ in this lab it cannot — see the note about `ceph orch device ls` in the build 
 
 ---
 
-## Exercise 19 — Filesystem snapshots that cost nothing
+## Exercise 22 — Filesystem snapshots that cost nothing
 
 **The situation.** Someone is about to run a migration script against the shared
 document root. You want a restore point, you want it in one command, and you do not
@@ -1189,7 +1604,7 @@ still using it.
 
 ---
 
-## Exercise 20 — What replication actually costs you
+## Exercise 23 — What replication actually costs you
 
 **The situation.** Someone asks for a 10 TB volume and you have 20 TB of disk. You have
 to explain why the answer is no. Replication is the single biggest factor in what a
@@ -1230,7 +1645,7 @@ no redundancy at all while it recovers:
 incus exec ceph-node1 -- cephadm shell -- ceph osd pool set cinder-volumes size 3
 ```
 
-This is also the answer to the capacity incident in Exercise 24: an image is charged
+This is also the answer to the capacity incident in Exercise 27: an image is charged
 at `size × replication`, so a 3.5 GB image costs 10.5 GB of cluster.
 
 **In the web UI.** Ceph dashboard → Pools shows size, usage and the same MAX AVAIL.
@@ -1240,7 +1655,7 @@ at `size × replication`, so a 3.5 GB image costs 10.5 GB of cluster.
 
 ---
 
-## Exercise 21 — Verify the data is really intact
+## Exercise 24 — Verify the data is really intact
 
 **The situation.** Ceph tells you `HEALTH_OK`, which means every object is *present*
 and the right number of copies exist. It does not, by itself, mean the bytes are still
@@ -1283,7 +1698,7 @@ timestamps.
 
 ---
 
-## Exercise 22 — The monitoring you already have
+## Exercise 25 — The monitoring you already have
 
 **The situation.** You want graphs of cluster throughput and OSD latency, and you are
 about to go and install Prometheus. You do not need to: `cephadm` deployed the whole
@@ -1335,7 +1750,7 @@ With that done, the embedded panels work:
 - **Cluster → OSDs → Overall Performance** — read/write latency percentiles, PG
   distribution, device class breakdown. The usual first stop when something is "slow"
 - **Cluster → Pools → Overall Performance** — per-pool throughput, next to the MAX
-  AVAIL from Exercise 20
+  AVAIL from Exercise 23
 
 Grafana on its own at `https://<VM_IP>:3000/dashboards` has about twenty pre-built Ceph
 dashboards the embedded views only sample — *Ceph Cluster - Advanced*, *Ceph Pool
@@ -1387,7 +1802,7 @@ CephPGsDamaged              critical  pgs           300s
 ```
 
 `CephOSDNearFull` fires at 85% after five minutes. That is the alert that would have
-caught Exercise 24 while it was still recoverable, rather than at 95% when writes had
+caught Exercise 27 while it was still recoverable, rather than at 95% when writes had
 already stopped.
 
 **Nothing is delivered, though.** Alertmanager has no receiver configured, so rules
@@ -1396,7 +1811,7 @@ fire into the dashboard and stop there. Wiring one up — email, a webhook, Slac
 
 ### Do it with something happening
 
-Re-run the failure drill from Exercise 17 with **Cluster → OSDs** open. Watching the
+Re-run the failure drill from Exercise 20 with **Cluster → OSDs** open. Watching the
 degraded-object count climb and drain away, and the latency panel spike, is far more
 legible than reading `ceph -s` in a loop — and it is how you will actually experience
 the real thing.
@@ -1407,7 +1822,7 @@ the real thing.
 
 ---
 
-## Exercise 23 — Add a node, then take it away again
+## Exercise 26 — Add a node, then take it away again
 
 **The situation.** The cluster is filling up and you have budget for another storage
 node. Later, that node is being decommissioned. Both directions are routine, and both
@@ -1535,7 +1950,7 @@ and 3 OSDs up and in before moving on.
 
 ---
 
-## Exercise 24 — Recover a cluster that has filled up
+## Exercise 27 — Recover a cluster that has filled up
 
 **The situation.** Someone uploads a large image, or a runaway job writes until there
 is no space left. Ceph stops accepting writes, Glance starts returning `502`, and

@@ -1,6 +1,6 @@
-# Exercise 11 — Encryption at rest, with the key in Barbican (web UI)
+# Exercise 14 — Encryption at rest, with the key in Barbican (web UI)
 
-Guide section: [Exercise 11](../openstack-ceph-lab-exercise.md#exercise-11--encryption-at-rest-with-the-key-in-barbican)
+Guide section: [Exercise 14](../openstack-ceph-lab-exercise.md#exercise-14--encryption-at-rest-with-the-key-in-barbican)
 
 An auditor asks where the encryption keys live, and whether an operator with access to
 the storage cluster could read customer data. "The disks are encrypted" is not an
@@ -15,13 +15,13 @@ and that is the part you have to get right.
 **Admin → Volume → Volume Types.** Create an ordinary type first, then use the
 **Create Encryption** link in its Encryption column.
 
-![Create an encrypted volume type](img/ex11-step01-create-encrypted-volume-type.png)
+![Create an encrypted volume type](img/ex14-step01-create-encrypted-volume-type.png)
 
 **Control Location `front-end` is the setting that matters.** It puts the encryption on
 the compute node, so plaintext never crosses the network to Ceph. `back-end` would rely
 on the storage layer instead — which is exactly what the auditor is asking about.
 
-![Volume types with encryption](img/ex11-step02-volume-types-luks-encrypted.png)
+![Volume types with encryption](img/ex14-step02-volume-types-luks-encrypted.png)
 
 The Encryption column now reads `luks`. A type cannot be given encryption while
 volumes of that type are in use, so do this before anyone starts using it.
@@ -30,9 +30,9 @@ volumes of that type are in use, so do this before anyone starts using it.
 
 **Project → Volumes → Create Volume**, with **Type** set to `LUKS`.
 
-![Create volume with LUKS type](img/ex11-step03-create-volume-type-luks.png)
+![Create volume with LUKS type](img/ex14-step03-create-volume-type-luks.png)
 
-![Volumes list showing Encrypted](img/ex11-step04-volumes-list-encrypted-yes.png)
+![Volumes list showing Encrypted](img/ex14-step04-volumes-list-encrypted-yes.png)
 
 The **Encrypted** column reads Yes. Attach it and inside the guest it is an ordinary
 block device — `mkfs.ext4`, mount, write. That is the point: nothing in the guest knows

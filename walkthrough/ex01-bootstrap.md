@@ -12,7 +12,7 @@ domain `Default`. You land on **Project → Compute → Overview**.
 
 ![Horizon project overview](img/ex00-step01-horizon-project-overview.png)
 
-The Limit Summary is worth a glance now: everything is at zero, and by Exercise 13 you
+The Limit Summary is worth a glance now: everything is at zero, and by Exercise 16 you
 will come back here to read a quota that has run out.
 
 ## Step 1 — Networks

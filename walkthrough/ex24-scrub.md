@@ -1,6 +1,6 @@
-# Exercise 21 — Verify the data is really intact (web UI)
+# Exercise 24 — Verify the data is really intact (web UI)
 
-Guide section: [Exercise 21](../openstack-ceph-lab-exercise.md#exercise-21--verify-the-data-is-really-intact)
+Guide section: [Exercise 24](../openstack-ceph-lab-exercise.md#exercise-24--verify-the-data-is-really-intact)
 
 `HEALTH_OK` means every object is present and the right number of copies exist. It does
 not mean the bytes are still correct. Scrubbing is what checks that.
@@ -9,7 +9,7 @@ not mean the bytes are still correct. Scrubbing is what checks that.
 
 **Cluster → OSDs** → select an OSD → **Deep Scrub**.
 
-![Deep scrub dialog](img/ex21-step01-osd-deep-scrub-dialog.png)
+![Deep scrub dialog](img/ex24-step01-osd-deep-scrub-dialog.png)
 
 **Scrub** compares metadata and object sizes — cheap, runs daily by default. **Deep
 Scrub** reads every object and compares checksums across replicas — expensive, weekly
@@ -25,7 +25,7 @@ Run one on demand after a power loss, or on a disk that has been throwing errors
 
 **Cluster → OSDs → Cluster-wide configuration → PG scrub.**
 
-![Cluster-wide PG scrub options](img/ex21-step02-cluster-wide-pg-scrub-options.png)
+![Cluster-wide PG scrub options](img/ex24-step02-cluster-wide-pg-scrub-options.png)
 
 This is where the automatic behaviour is tuned, and the fields name the real
 trade-offs:

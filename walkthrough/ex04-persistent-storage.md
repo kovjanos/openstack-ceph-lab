@@ -13,7 +13,7 @@ another.
 ![Create Volume dialog](img/ex04-step01-volumes-create-volume-dialog.png)
 
 Leave **Volume Source** as "No source, empty volume" and **Type** as `__DEFAULT__`.
-Exercise 11 comes back to this dialog to pick the `LUKS` type instead.
+Exercise 14 comes back to this dialog to pick the `LUKS` type instead.
 
 ## Step 2 — Everything else is on the row dropdown
 
@@ -48,4 +48,4 @@ This is the other half of the exercise. Every Cinder volume is one RBD image in
 `cinder-volumes`, named `volume-<uuid>`; every instance's root disk is one in
 `nova-vms`; the Glance image is one in `glance-images`. Nothing is hidden — an operator
 with cluster credentials can see and read all of it, which is precisely the problem
-Exercise 11 solves.
+Exercise 14 solves.
