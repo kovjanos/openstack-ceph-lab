@@ -26,6 +26,10 @@ That prints both URLs and both passwords:
 | Prometheus | `http://<vm-ip>:9095/` | none |
 | Alertmanager | `http://<vm-ip>:9093/` | none |
 
+Load balancing adds no URL of its own — it is a panel inside Horizon, under
+Project → Network → Load Balancers. Octavia's API is on 9876, bound to the internal VIP
+and not reachable from macOS.
+
 **Two separate certificates.** The Ceph dashboard (8443) and Grafana (3000) each have
 their own self-signed certificate. Accept both — and accept 3000 *before* opening any
 "Overall Performance" tab, or the embedded Grafana panels render as empty grey frames

@@ -1185,6 +1185,35 @@ phase_87_octavia() {
         info "amphora image uploaded to glance, owned by the service project"
     fi
 
+    # Kolla's octavia-interface.service is ordered After=docker.service, but docker
+    # being up is not the same as the openvswitch container having recreated br-int's
+    # ports. On every machine restart the unit runs first, its ExecStartPre dies with
+    #     Cannot find device "o-hm0"
+    # and systemd burns all five default retries inside one second:
+    #     octavia-interface.service: Start request repeated too quickly
+    #
+    # The unit then stays failed, o-hm0 stays DOWN, and the health manager has no path
+    # to the amphorae -- so load balancers are silently unmonitored after any restart.
+    # Nothing else reports this; the octavia containers are all healthy.
+    #
+    # A drop-in that retries patiently fixes it without touching Kolla's unit. Five
+    # seconds apart for five minutes is far longer than OVS takes.
+    mkdir -p /etc/systemd/system/octavia-interface.service.d
+    cat > /etc/systemd/system/octavia-interface.service.d/10-wait-for-ovs.conf <<'EOF'
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=60
+
+[Service]
+RestartSec=5
+EOF
+    systemctl daemon-reload
+    systemctl reset-failed octavia-interface 2>/dev/null || true
+    systemctl enable --now octavia-interface >/dev/null 2>&1 || true
+    wait_for 180 "o-hm0 up (health manager path to the amphorae)" \
+        bash -c "ip -br addr show o-hm0 2>/dev/null | grep -q '10\.'" \
+        || die "o-hm0 has no address -- systemctl status octavia-interface"
+
     wait_for 180 "octavia api answering" bash -c \
         "timeout 5 bash -c '</dev/tcp/$KOLLA_VIP/9876'" \
         || die "octavia-api is not listening -- docker logs octavia_api"
@@ -1272,6 +1301,21 @@ phase_90_verify() {
             "timeout 5 bash -c '</dev/tcp/$CEPH_SUBNET.11/$RGW_CONTAINER_PORT'" \
             || info "RGW not serving yet -- check 'ceph orch ps --daemon-type rgw'"
     fi
+    # o-hm0 is a runtime OVS port, so it is the octavia thing most likely to be
+    # missing after a restart. The drop-in in 87-octavia should have handled it;
+    # check anyway, because a failed one is invisible from the container status.
+    if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ] && systemctl list-unit-files octavia-interface.service >/dev/null 2>&1; then
+        if ip -br addr show o-hm0 2>/dev/null | grep -q '10\.'; then
+            info "o-hm0 up ($(ip -br addr show o-hm0 | awk '{print $3}'))"
+        else
+            systemctl reset-failed octavia-interface 2>/dev/null || true
+            systemctl start octavia-interface 2>/dev/null || true
+            wait_for 120 "o-hm0 up after restart" \
+                bash -c "ip -br addr show o-hm0 2>/dev/null | grep -q '10\.'" \
+                || info "o-hm0 still down -- load balancers will not be health-checked"
+        fi
+    fi
+
     if ceph_do ceph nfs cluster ls 2>/dev/null | grep -q labnfs; then
         wait_for 300 "ganesha serving after restart" bash -c \
             "timeout 5 bash -c '</dev/tcp/$CEPH_SUBNET.11/2049'" \

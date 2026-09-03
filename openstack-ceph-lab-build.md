@@ -2298,6 +2298,7 @@ Prometheus and Alertmanager are plain HTTP and need no exception. Prometheus at
 |---|---|
 | `kolla0`, `veth-ext`, Horizon DNAT | yes — `kolla-net-setup.service` (1.3) |
 | Incus proxy devices (dashboard, RGW, NFS, monitoring) | yes — stored in `/var/lib/incus` |
+| `o-hm0`, Octavia's health-manager port | **not without help** — see below |
 | The dashboard's Grafana/Prometheus/Alertmanager URLs | **no** — they embed the VM address, so `90-verify` re-sets them |
 | The VM's vmnet address | **no** — changes on every machine recreate |
 
@@ -2752,6 +2753,34 @@ unit recreates it. This is what `kolla-net-setup.service` is for, and why it fix
 **Verified.** `container machine stop` followed by `container machine run` returns the
 lab to service unattended, including boots where the dm minor numbers shuffled and
 `ceph-lab-remap.service` repointed each node to its own volume.
+
+**Octavia's `o-hm0` does not come back on its own.** Kolla writes
+`octavia-interface.service` ordered `After=docker.service`, but docker being up is not
+the same as the openvswitch container having recreated `br-int`'s ports. On every
+restart the unit runs first, its `ExecStartPre` dies with `Cannot find device "o-hm0"`,
+and systemd burns all five default retries inside one second:
+
+```
+octavia-interface.service: Start request repeated too quickly.
+```
+
+The unit stays failed, `o-hm0` stays DOWN, and the health manager has no path to the
+amphorae — so load balancers are silently unmonitored. Nothing reports it: all four
+octavia containers are healthy, and `openstack loadbalancer list` looks fine.
+
+`03-provision.sh` drops in a patient retry, which is all it needs:
+
+```ini
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=60
+[Service]
+RestartSec=5
+```
+
+Verified: with the drop-in, `o-hm0` came up unattended **50 seconds** after a restart,
+with no manual step. `90-verify` also checks it and starts it if something else went
+wrong, because a failed unit is invisible from the container status.
 
 **Stop can fail with instances running, and it fails badly.** With three Nova instances
 up, `container machine stop` gave up after 12s:

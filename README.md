@@ -163,15 +163,23 @@ Ceph commands go through `incus exec ceph-node1 -- cephadm shell --`.
 
 ## Web UIs
 
-| UI | URL | Login |
-|---|---|---|
-| Horizon | `http://<vm-ip>:8080/` | `admin`, domain `Default` |
-| Ceph dashboard | `https://<vm-ip>:8443/` | `admin` |
-| Grafana | `https://<vm-ip>:3000/` | none — anonymous viewing |
-| Prometheus | `http://<vm-ip>:9095/` | none |
-| Alertmanager | `http://<vm-ip>:9093/` | none |
+| UI | URL | Login | Covers |
+|---|---|---|---|
+| Horizon | `http://<vm-ip>:8080/` | `admin`, domain `Default` | compute, network, volumes, **load balancers**, Heat, identity |
+| Ceph dashboard | `https://<vm-ip>:8443/` | `admin` | hosts, OSDs, pools, CephFS, object gateway, logs, alerts |
+| Grafana | `https://<vm-ip>:3000/` | none — anonymous viewing | ~20 pre-built Ceph dashboards; also embedded in the Ceph dashboard |
+| Prometheus | `http://<vm-ip>:9095/` | none | scrape targets and a PromQL query browser |
+| Alertmanager | `http://<vm-ip>:9093/` | none | alert state behind the dashboard's Alerts page |
 
-Every address and both passwords are printed by `provision-lab --only 90-verify`.
+Every address and every password is printed by `provision-lab --only 90-verify`.
+
+**Load balancing does not add a UI of its own.** It appears inside Horizon under
+Project → Network → Load Balancers, with a five-step create wizard covering listener,
+pool, members and monitor in one pass. The Octavia API is on port 9876 but bound to the
+internal VIP behind haproxy, so it is not reachable from macOS and there is nothing to
+open there — it is a REST API, not a dashboard. The amphorae are likewise invisible in
+Horizon: they live in Octavia's own service project, and `openstack loadbalancer
+amphora list` is the only view of them.
 
 The monitoring stack is what `cephadm` deployed at bootstrap — nothing extra is
 installed. The Ceph dashboard embeds Grafana's panels, so open `https://<vm-ip>:3000/`
