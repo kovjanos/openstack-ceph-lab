@@ -316,6 +316,13 @@ RUN apt-get update && apt-get install -y \\
     python3-dev python3-venv python3-apt libffi-dev libssl-dev libdbus-glib-1-dev \\
     kmod && \\
     apt-get clean && rm -rf /var/lib/apt/lists/*
+# --- wget has no read timeout by default, so a mirror that accepts a connection and
+# --- then goes silent hangs forever. That is not hypothetical: an amphora build here
+# --- sat on one stalled fetch from ports.ubuntu.com for 13 minutes with a live,
+# --- ESTABLISHED, empty-queue socket while the same URL fetched fine in 0.3s beside
+# --- it. debootstrap drives wget, so the setting has to be global.
+RUN printf 'timeout = 30\ntries = 3\nwaitretry = 5\n' >> /etc/wgetrc
+
 RUN yes | unminimize || true
 RUN >/etc/machine-id
 RUN >/var/lib/dbus/machine-id
@@ -452,11 +459,17 @@ RUN systemctl mask virtlogd.service virtlogd.socket \\
 # --- has to work; a container-based rbd is not a substitute. Ubuntu's own
 # --- ceph-common is 19.2.3 and cannot parse the cephx keys a Tentacle cluster
 # --- mints, so it comes from the pinned upstream repo instead.
+# ---
+# --- ceph-fuse is here for the same reason, not for convenience. Exercise 22 needs
+# --- it because the VM kernel has no CephFS driver, and installing it later would
+# --- mean an 'apt-get update' inside a machine whose whole point is a pinned
+# --- $CEPH_VERSION -- the one thing most likely to drag in a mismatched client.
+# --- Both come from the same pinned repo in the same layer, so they cannot diverge.
 RUN curl -fsSL https://download.ceph.com/keys/release.gpg \\
       -o /etc/apt/trusted.gpg.d/ceph.gpg && \\
     echo 'deb https://download.ceph.com/debian-$CEPH_VERSION/ noble main' \\
       > /etc/apt/sources.list.d/ceph.list && \\
-    apt-get update && apt-get install -y ceph-common && \\
+    apt-get update && apt-get install -y ceph-common ceph-fuse && \\
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # --- Storage units, in three stages. A single unit deadlocks: it would have to run

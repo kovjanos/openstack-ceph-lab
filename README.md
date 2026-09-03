@@ -2,22 +2,15 @@
 
 A complete, restart-proof OpenStack cloud backed by a 3-node Ceph cluster, running
 inside a single Apple `container` machine on an M-series Mac. Three scripts build it;
-two guides explain it; 24 day-2 exercises give you something to do with it.
+two guides explain it; 28 day-2 exercises give you something to do with it.
 
 This is a lab, not a production reference. It is sized to fit on one laptop and every
 shortcut it takes is stated in the build guide.
 
+![OpenStack and Ceph lab on Apple Silicon](img/lab_overview.jpeg)
+
 ## What you get
 
-```
-macOS (Apple Silicon, macOS 26)
-  └─ container machine "openstack-lab" — Ubuntu 24.04 ARM64, /dev/kvm, device-mapper
-       ├─ loop0/1/2 → ceph-vg1/2/3 → LVs osd1/osd2/osd3 (15 GiB each)
-       ├─ incusbr0  10.100.0.0/24
-       ├─ ceph-node1  10.100.0.11   mon, mgr, osd.0, RGW, NFS-Ganesha
-       ├─ ceph-node2  10.100.0.12   mon, mgr standby, osd.1
-       └─ ceph-node3  10.100.0.13   mon, osd.2
-```
 
 - **Ceph 20.2.2 (tentacle)** deployed by `cephadm` into Incus system containers, on
   LVM-backed loop devices — 3 mons, 3 OSDs, 45 GiB raw, MDS, RGW
@@ -30,6 +23,67 @@ macOS (Apple Silicon, macOS 26)
 - **Octavia load balancing** in `ACTIVE_STANDBY`, with an amphora image built for
   aarch64 — no prebuilt one exists
 - Survives a machine restart, including device renumbering
+
+## Architecture
+
+```mermaid
+flowchart TB
+
+subgraph MAC["macOS — Apple Silicon, macOS 26"]
+  BROWSER["Browser / CLI<br/>8080 Horizon · 8443 Ceph · 3000 Grafana<br/>9095 Prometheus · 9093 Alertmanager<br/>8100 S3 · 2049 NFS"]
+  CTL["container CLI 1.3.1<br/>Apple Virtualization.framework"]
+  KERN["vmlinux-arm64 — custom kernel<br/>device-mapper · OVS · ipset · NFS · iptables-legacy"]
+end
+
+subgraph VM["container machine openstack-lab — Ubuntu 24.04 ARM64 · 8 vCPU · 26 GB · /dev/kvm"]
+
+  subgraph DISK["Storage substrate"]
+    LVM["loop0/1/2 → ceph-vg1/2/3 → osd1/2/3<br/>15 GiB each · 45 GiB raw"]
+  end
+
+  subgraph CEPHC["Ceph 20.2.2 tentacle — 3 Incus system containers on incusbr0 10.100.0.0/24"]
+    N1["ceph-node1 · .11<br/>mon · mgr · osd.0 · MDS<br/>RGW · NFS-Ganesha<br/>prometheus · grafana · alertmanager"]
+    N2["ceph-node2 · .12<br/>mon · mgr standby · osd.1"]
+    N3["ceph-node3 · .13<br/>mon · osd.2"]
+  end
+
+  RADOS["RADOS — 13 pools<br/>glance-images · cinder-volumes · nova-vms<br/>cephfs.labfs.* · default.rgw.* · .nfs"]
+
+  subgraph OSTACK["OpenStack 2026.1 — Kolla-Ansible, 47 containers"]
+    CORE["keystone · glance · nova · neutron · placement<br/>cinder · barbican · heat · horizon"]
+    OCT["octavia — api · worker<br/>health-manager · housekeeping"]
+    INFRA["mariadb · rabbitmq · haproxy<br/>keepalived · memcached · proxysql"]
+  end
+
+  subgraph NETW["Networking"]
+    K0["kolla0 10.10.10.1/24<br/>control plane VIP .10"]
+    BREX["br-ex 172.24.4.1/24<br/>physnet1 · flat external"]
+    BRINT["br-int — OVS<br/>VXLAN tenant 10.0.0.0/24"]
+    OHM["o-hm0 10.1.0.0/24<br/>lb-mgmt-net"]
+  end
+
+  subgraph GUESTS["Nested guests — KVM"]
+    WL["lab-workload<br/>Alpine 248 MB · 512 MB RAM"]
+    AMP["amphorae ×2 per LB<br/>HAProxy · ACTIVE_STANDBY · VRRP"]
+  end
+end
+
+BROWSER -->|"published ports"| VM
+CTL --> VM
+KERN --> VM
+LVM --> CEPHC
+CEPHC --> RADOS
+RADOS -->|"librbd · libcephfs · RGW"| OSTACK
+OSTACK --> GUESTS
+K0 --- OSTACK
+BREX --- GUESTS
+BRINT --- GUESTS
+OHM --- OCT
+```
+
+Floating IPs on `172.24.4.0/24` live behind `br-ex` and are **not** routable from
+macOS — `lab-expose <port> <floating-ip>` publishes one on the VM's address when you
+want to open a workload in your own browser.
 
 ## Requirements
 
@@ -105,7 +159,7 @@ one.
 | `03-provision.sh` | Runs in the VM. Eleven checkpointed phases from loop devices to a verified cloud. |
 | `sync-provision.sh` | Pushes an edited `03-provision.sh` into the machine without rebuilding the image. |
 | `openstack-ceph-lab-build.md` | The build guide: every phase, why it is done that way, and what breaks otherwise. |
-| `openstack-ceph-lab-exercise.md` | 24 day-2 exercises, each with a real incident behind it, CLI steps, the web-UI equivalent, and cleanup. |
+| `openstack-ceph-lab-exercise.md` | 28 day-2 exercises, each with a real incident behind it, CLI steps, the web-UI equivalent, and cleanup. |
 | `walkthrough/` | Screenshots of the web-UI side of every exercise, one Markdown file per exercise. |
 
 Both build scripts delete the BuildKit cache as their last step. That is not
@@ -126,7 +180,7 @@ with the day-2 situation it covers, so you know why you are doing it:
 | D. Load balancing † | one address two servers · sticky sessions · the load balancer died |
 | E. Shared storage | shared NFS · object storage |
 | F. Platform operations | encrypted volumes with Barbican · Heat · quotas · projects & RBAC |
-| G. Ceph day-2 | maintenance mode · restricted credentials · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · node add/remove |
+| G. Ceph day-2 | RADOS underneath it all · maintenance mode · restricted credentials · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · node add/remove |
 | H. Recovery | recovering a cluster that has filled up |
 
 † Part D needs the load-balancer build, which is on by default — see below. Built

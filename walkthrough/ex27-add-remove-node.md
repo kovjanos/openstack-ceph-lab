@@ -1,6 +1,6 @@
-# Exercise 26 — Add a node, then take it away again (web UI)
+# Exercise 27 — Add a node, then take it away again (web UI)
 
-Guide section: [Exercise 26](../openstack-ceph-lab-exercise.md#exercise-26--add-a-node-then-take-it-away-again)
+Guide section: [Exercise 27](../openstack-ceph-lab-exercise.md#exercise-27--add-a-node-then-take-it-away-again)
 
 The cluster is filling up and you have budget for another storage node. Later, that
 node is decommissioned. Both directions are routine, and both leave things behind if
@@ -10,7 +10,7 @@ you stop at the obvious step — which is the real lesson.
 
 **Cluster → Hosts → Add.**
 
-![Add host dialog](img/ex26-step01-ceph-add-host-dialog.png)
+![Add host dialog](img/ex27-step01-ceph-add-host-dialog.png)
 
 Hostname, network address, labels, and a maintenance-mode toggle for adding a host you
 are not ready to use yet. The hostname field takes ranges
@@ -31,7 +31,7 @@ Back on **Cluster → Hosts**, the host's ⋮ menu, in order:
 1. **Start Drain** — moves daemons off the host and waits
 2. **Remove** — takes it out of the cluster
 
-![Hosts list with the actions menu](img/ex18-step01-ceph-hosts-list.png)
+![Hosts list with the actions menu](img/ex19-step01-ceph-hosts-list.png)
 
 ## Step 3 — What gets left behind
 

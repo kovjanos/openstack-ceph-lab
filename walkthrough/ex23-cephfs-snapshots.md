@@ -1,6 +1,6 @@
-# Exercise 22 — Filesystem snapshots that cost nothing (web UI)
+# Exercise 23 — Filesystem snapshots that cost nothing (web UI)
 
-Guide section: [Exercise 22](../openstack-ceph-lab-exercise.md#exercise-22--filesystem-snapshots-that-cost-nothing)
+Guide section: [Exercise 23](../openstack-ceph-lab-exercise.md#exercise-23--filesystem-snapshots-that-cost-nothing)
 
 Someone is about to run a migration script against the shared document root. You want
 a restore point in one command, without detaching anything or stopping the web
@@ -10,7 +10,7 @@ servers.
 
 **File → File Systems** → expand `labfs` → **Snapshots**.
 
-![CephFS snapshots tab](img/ex22-step01-cephfs-snapshots-tab.png)
+![CephFS snapshots tab](img/ex23-step01-cephfs-snapshots-tab.png)
 
 > No subvolumes are present. Please create subvolumes to manage snapshots.
 

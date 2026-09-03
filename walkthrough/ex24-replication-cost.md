@@ -1,6 +1,6 @@
-# Exercise 23 — What replication actually costs you (web UI)
+# Exercise 24 — What replication actually costs you (web UI)
 
-Guide section: [Exercise 23](../openstack-ceph-lab-exercise.md#exercise-23--what-replication-actually-costs-you)
+Guide section: [Exercise 24](../openstack-ceph-lab-exercise.md#exercise-24--what-replication-actually-costs-you)
 
 Someone asks for a 10 TB volume and you have 20 TB of disk. You have to explain why
 the answer is no.
@@ -9,7 +9,7 @@ the answer is no.
 
 **Ceph dashboard → Cluster → Pools.**
 
-![Ceph pools list](img/ex23-step01-ceph-pools-list.png)
+![Ceph pools list](img/ex24-step01-ceph-pools-list.png)
 
 The **Data Protection** column reads `replica: ×3` on every pool — the Glance images,
 the Cinder volumes, the Nova root disks, the CephFS metadata, the RGW indexes. That
@@ -40,5 +40,5 @@ disk failure leaves a single copy and no redundancy at all while it recovers.
 ## Why this matters two exercises later
 
 An image is charged at `size × replication`. A 3.5 GB distro image costs 10.5 GB of a
-45 GiB cluster — which is how Exercise 27's cluster fills up, and why this lab builds a
+45 GiB cluster — which is how Exercise 28's cluster fills up, and why this lab builds a
 248 MB image instead.

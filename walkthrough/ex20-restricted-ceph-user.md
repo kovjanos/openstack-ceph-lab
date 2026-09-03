@@ -1,6 +1,6 @@
-# Exercise 19 — Scoping credentials with a restricted Ceph user (web UI)
+# Exercise 20 — Scoping credentials with a restricted Ceph user (web UI)
 
-Guide section: [Exercise 19](../openstack-ceph-lab-exercise.md#exercise-19--scoping-credentials-with-a-restricted-ceph-user)
+Guide section: [Exercise 20](../openstack-ceph-lab-exercise.md#exercise-20--scoping-credentials-with-a-restricted-ceph-user)
 
 A monitoring tool wants Ceph credentials. It needs to read volumes; it has no business
 writing to them. Handing it `client.admin` is the path of least resistance and exactly
@@ -10,7 +10,7 @@ how a compromised monitoring box turns into a destroyed cluster.
 
 **Ceph dashboard → Administration → Ceph Users.**
 
-![Ceph users and capabilities](img/ex19-step01-ceph-users-capabilities.png)
+![Ceph users and capabilities](img/ex20-step01-ceph-users-capabilities.png)
 
 Every CephX entity with its caps in one table. This is `ceph auth ls` made readable,
 and it is the fastest way to answer "what can this credential actually do?".

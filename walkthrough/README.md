@@ -75,27 +75,22 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 | 15 — Heat | [ex15-heat.md](ex15-heat.md) | Horizon |
 | 16 — Quotas | [ex16-quotas.md](ex16-quotas.md) | Horizon |
 | 17 — A second tenant | [ex17-second-tenant.md](ex17-second-tenant.md) | Horizon |
-| 18 — Ceph maintenance mode | [ex18-maintenance-mode.md](ex18-maintenance-mode.md) | Ceph |
-| 19 — Restricted Ceph user | [ex19-restricted-ceph-user.md](ex19-restricted-ceph-user.md) | Ceph |
-| 20 — Lose a disk | [ex20-lose-a-disk.md](ex20-lose-a-disk.md) | Ceph |
-| 21 — Replace a disk | [ex21-replace-a-disk.md](ex21-replace-a-disk.md) | Ceph |
-| 22 — CephFS snapshots | [ex22-cephfs-snapshots.md](ex22-cephfs-snapshots.md) | Ceph |
-| 23 — What replication costs | [ex23-replication-cost.md](ex23-replication-cost.md) | Ceph |
-| 24 — Verify the data | [ex24-scrub.md](ex24-scrub.md) | Ceph |
-| 25 — The monitoring you have | [ex25-monitoring.md](ex25-monitoring.md) | Ceph + Grafana + Prometheus |
-| 26 — Add and remove a node | [ex26-add-remove-node.md](ex26-add-remove-node.md) | Ceph |
-| 27 — Recover a full cluster | [ex27-full-cluster.md](ex27-full-cluster.md) | Ceph |
+| 18 — RADOS underneath it all | [ex18-rados.md](ex18-rados.md) | Ceph |
+| 19 — Ceph maintenance mode | [ex19-maintenance-mode.md](ex19-maintenance-mode.md) | Ceph |
+| 20 — Restricted Ceph user | [ex20-restricted-ceph-user.md](ex20-restricted-ceph-user.md) | Ceph |
+| 21 — Lose a disk | [ex21-lose-a-disk.md](ex21-lose-a-disk.md) | Ceph |
+| 22 — Replace a disk | [ex22-replace-a-disk.md](ex22-replace-a-disk.md) | Ceph |
+| 23 — CephFS snapshots | [ex23-cephfs-snapshots.md](ex23-cephfs-snapshots.md) | Ceph |
+| 24 — What replication costs | [ex24-replication-cost.md](ex24-replication-cost.md) | Ceph |
+| 25 — Verify the data | [ex25-scrub.md](ex25-scrub.md) | Ceph |
+| 26 — The monitoring you have | [ex26-monitoring.md](ex26-monitoring.md) | Ceph + Grafana + Prometheus |
+| 27 — Add and remove a node | [ex27-add-remove-node.md](ex27-add-remove-node.md) | Ceph |
+| 28 — Recover a full cluster | [ex28-full-cluster.md](ex28-full-cluster.md) | Ceph |
 
 † needs the load-balancer build, which is on by default. Built with
 `ENABLE_NETWORK_LOADBALANCER=no`? Add it with
 `ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla`, or skip these three —
 the end of Exercise 9 covers the same ground with HAProxy in a guest.
-
-## Screenshot naming
-
-`ex<NN>-step<NN>-<panel>-<what>.png`, all in [`img/`](img). The exercise number matches
-the guide, the step number is the order within this walkthrough, and the rest names the
-panel and the action.
 
 ## Where the UI stops
 

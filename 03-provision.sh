@@ -691,6 +691,11 @@ phase_70_kolla() {
             pip install -q -U pip
             pip install -q 'git+https://opendev.org/openstack/kolla-ansible@$KOLLA_BRANCH'
             pip install -q docker dbus-python python-openstackclient
+            # Kolla's venv ships no Heat or Barbican client, so 'openstack stack ...'
+            # and 'openstack secret ...' are not openstack commands at all. Install
+            # them here rather than telling the reader to -- these go into kolla's own
+            # venv and touch nothing the system package manager owns.
+            pip install -q python-heatclient python-barbicanclient
         " || die "kolla-ansible install failed"
     fi
 
@@ -803,17 +808,15 @@ EOF
     # so the unit dies with status=203/EXEC and the deploy fails on its very last
     # task, after everything else has succeeded. The OVS port is created and the MAC
     # is set; only the DHCP client is absent. isc-dhcp-client is still packaged.
-    # 02-build-image.sh bakes isc-dhcp-client into the image, so this is only a
-    # fallback for an older one. It has to run 'apt-get update' first: the image
-    # ends with 'rm -rf /var/lib/apt/lists/*', so a fresh machine has no package
-    # lists at all and apt answers "Unable to locate package" for anything.
+    # Every package this lab needs is in the machine image. Nothing installs packages
+    # in the VM at runtime, deliberately: an 'apt-get update' here would refresh a
+    # machine whose whole premise is a pinned Ceph 20.2.2, and the most likely thing
+    # it drags in is a mismatched client. So this checks rather than installs.
     if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ] && [ ! -x /sbin/dhclient ]; then
-        info "installing isc-dhcp-client (older image -- octavia-interface needs /sbin/dhclient)"
-        DEBIAN_FRONTEND=noninteractive apt-get update -qq >/var/log/openstack-lab-apt.out 2>&1
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq isc-dhcp-client \
-            >>/var/log/openstack-lab-apt.out 2>&1 \
-            || { tail -5 /var/log/openstack-lab-apt.out | sed 's/^/    /' | tee -a "$LOG"
-                 die "could not install isc-dhcp-client -- see /var/log/openstack-lab-apt.out"; }
+        die "no /sbin/dhclient -- octavia-interface.service needs it, and it should have
+    come from the image. Rebuild with ./02-build-image.sh, which installs
+    isc-dhcp-client, or build without load balancing using
+    ENABLE_NETWORK_LOADBALANCER=no."
     fi
 
     # The amphora CA has to exist before deploy: the octavia role copies the certs
@@ -1051,12 +1054,14 @@ phase_86_nfs() {
     #     status=2/INVALIDARGUMENT ... Start request repeated too quickly
     # all while 'ceph orch ps' reports the daemon as running.
     #
-    # rpcbind is in the node base image (30-nodebase); install it here too so this
-    # works against nodes built from an older image. Nothing uses v3 -- the export
-    # below is v4 only -- rpcbind just has to exist for startup to succeed.
-    incus exec ceph-node1 -- bash -c \
-        'command -v rpcbind >/dev/null || { apt-get update -qq && apt-get install -y rpcbind; }' \
-        >/dev/null 2>&1 || die "could not install rpcbind in ceph-node1"
+    # rpcbind comes from the node base image built in 30-nodebase, which is rebuilt
+    # on every run -- so this is a check, not an install. Nothing uses v3; the export
+    # below is v4 only. rpcbind just has to exist or ganesha exits 2 at startup.
+    # bash -c is required: 'command' is a shell builtin and 'incus exec' runs a
+    # binary directly, so the unwrapped form always fails with "Command not found"
+    # regardless of whether rpcbind is installed.
+    incus exec ceph-node1 -- bash -c 'command -v rpcbind' >/dev/null 2>&1 \
+        || die "rpcbind missing in ceph-node1 -- it should come from ceph-base (30-nodebase)"
     incus exec ceph-node1 -- systemctl enable --now rpcbind rpcbind.socket >/dev/null 2>&1 || true
     [ "$(incus exec ceph-node1 -- systemctl is-active rpcbind 2>&1)" = active ] \
         || die "rpcbind is not running in ceph-node1 -- ganesha will exit on startup"
@@ -1097,13 +1102,10 @@ JSON" >/dev/null 2>&1 || die "could not apply the NFSv4-only export"
     ceph_do ceph nfs export ls labnfs | sed 's/^/    /' | tee -a "$LOG"
     add_proxy ceph-node1 nfs 2049 "$CEPH_SUBNET.11:2049"
 
-    # nfs-common is in the image package list, but install it if this is an older
-    # image -- without it there is no mount.nfs4 and the export cannot be tested.
-    command -v mount.nfs4 >/dev/null 2>&1 || {
-        info "installing nfs-common (older image)"
-        DEBIAN_FRONTEND=noninteractive apt-get install -y nfs-common >/dev/null 2>&1 \
-            || die "could not install nfs-common"
-    }
+    # nfs-common is in the image package list; check rather than install, for the
+    # same reason as dhclient above.
+    command -v mount.nfs4 >/dev/null 2>&1 \
+        || die "no mount.nfs4 -- nfs-common should have come from the image; rebuild with ./02-build-image.sh"
 
     # soft,retry=0 and a timeout wrapper: a default NFS mount retries for minutes
     # rather than failing, so wait_for would never get to iterate.
@@ -1150,16 +1152,14 @@ phase_87_octavia() {
     # branch as the control plane: an amphora-agent newer than the API it reports
     # to is a version skew you discover at the first failover, not at boot.
     if [ ! -f "$img" ]; then
-        info "building the amphora image -- 20-40 minutes, the slowest step in the lab"
+        info "building the amphora image -- about 10 minutes, the slowest step in the lab"
 
-        # All of these are in the image already; this only matters on an older one,
-        # and it needs the update for the same reason as isc-dhcp-client above.
-        if ! command -v debootstrap >/dev/null || ! command -v qemu-img >/dev/null; then
-            DEBIAN_FRONTEND=noninteractive apt-get update -qq >>"$build_log" 2>&1
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-                qemu-utils debootstrap kpartx python3-venv uuid-runtime dosfstools git \
-                >>"$build_log" 2>&1 || die "could not install the amphora build prerequisites -- see $build_log"
-        fi
+        # qemu-utils, debootstrap, kpartx, python3-venv, uuid-runtime, dosfstools and
+        # git all come from the image. Check, do not install.
+        for t in qemu-img debootstrap kpartx python3 uuidgen mkfs.vfat git; do
+            command -v "$t" >/dev/null 2>&1 \
+                || die "$t is missing -- it should have come from the image; rebuild with ./02-build-image.sh"
+        done
 
         if [ ! -x "$dib/bin/disk-image-create" ]; then
             python3 -m venv "$dib" >>"$build_log" 2>&1
@@ -1253,6 +1253,8 @@ EOF
     # octaviaclient, so 'openstack loadbalancer ...' is not an openstack command at
     # all and the CLI answers with a list of 'container ...' suggestions, which
     # reads like the load balancer is broken rather than the client being absent.
+    sudo -u kolla bash -lc \
+        '. /opt/kolla/venv/bin/activate && python -c "import octaviaclient" 2>/dev/null' || \
     sudo -u kolla bash -lc \
         '. /opt/kolla/venv/bin/activate && python -c "import octaviaclient" 2>/dev/null' || \
     sudo -u kolla bash -lc \
@@ -1472,6 +1474,22 @@ phase_90_verify() {
     ceph_do ceph dashboard set-alertmanager-api-host "http://$VM_IP:9093" >/dev/null || true
     ceph_do ceph dashboard set-prometheus-api-host "http://$VM_IP:9095" >/dev/null || true
     info "monitoring URLs point at $VM_IP (grafana 3000, prometheus 9095, alertmanager 9093)"
+
+    # br-ex only exists once Kolla's openvswitch container has created it, which on a
+    # first provision is ~15 minutes after boot. lab-brex.service waits 5 minutes and
+    # then exits 0 -- silently, reporting success -- so on a fresh build the bridge
+    # never gets its address and every floating IP is unreachable: ping and ssh time
+    # out against instances that are running perfectly. It only ever appeared to work
+    # because a restarted machine already has br-ex in the OVS config.
+    #
+    # The boot unit is right for restarts. This is what makes a first build correct.
+    if ! ip addr show dev br-ex 2>/dev/null | grep -q '172\.24\.4\.1/24'; then
+        info "br-ex has no gateway address -- running lab-brex now (expected on a first build)"
+        /usr/local/sbin/lab-brex.sh >/dev/null 2>&1 || true
+    fi
+    ip addr show dev br-ex 2>/dev/null | grep -q '172\.24\.4\.1/24' \
+        && info "br-ex 172.24.4.1/24 -- floating IPs routable" \
+        || info "NOT routable: br-ex has no 172.24.4.1/24 -- floating IPs will time out"
 
     write_lab_expose
     exposed=$(/usr/local/sbin/lab-expose --list 2>/dev/null | grep -c 'http://' || true)

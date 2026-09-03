@@ -44,20 +44,17 @@ and you get errors like `unrecognized arguments: heat webstack` from a perfectly
 Put it in your shell profile, or prefix commands with the long form. Ceph commands run
 through `incus exec ceph-node1 -- cephadm shell --`.
 
-**Three CLI plugins are missing by default.** Kolla's venv has no Heat, Barbican or
+**Three CLI plugins that Kolla does not ship.** Its venv has no Heat, Barbican or
 Octavia client, so `openstack stack ...`, `openstack secret ...` and
-`openstack loadbalancer ...` are not openstack commands at all. The last one is the
-most confusing, because the CLI answers with a list of `container ...` suggestions,
-which reads like a broken load balancer rather than an absent client. Install them
-once:
+`openstack loadbalancer ...` would not be openstack commands at all. The Octavia one
+is the most confusing when missing, because the CLI answers with a list of
+`container ...` suggestions, which reads like a broken load balancer rather than an
+absent client.
 
-```bash
-sudo -u kolla bash -lc '. /opt/kolla/venv/bin/activate && \
-  pip install python-heatclient python-barbicanclient python-octaviaclient'
-```
-
-(`provision-lab` installs the Octavia one for you when the load-balancer build is
-enabled; the other two are always needed.)
+**`provision-lab` installs all three**, into Kolla's own venv, so there is nothing for
+you to do. If you are ever tempted to install packages inside this VM by hand, don't:
+the machine is pinned to Ceph 20.2.2, and an `apt-get update` is the most direct route
+to a client that cannot read the cluster's cephx keys.
 
 ## Reaching a workload from your own browser
 
@@ -132,8 +129,8 @@ fit 24 GB with less room to spare.
 | **D. Load balancing** | 9 one address two servers · 10 sticky sessions · 11 the load balancer died | 2 guests + 2 amphorae | LB build |
 | **E. Shared storage** | 12 shared NFS · 13 object storage | 2 guests | |
 | **F. Platform operations** | 14 encrypted volume · 15 Heat · 16 quotas · 17 projects & RBAC | 2 guests | |
-| **G. Ceph day-2** | 18 maintenance mode · 19 restricted user · 20 failure drill · 21 disk replacement · 22 CephFS snapshots · 23 replication cost · 24 scrub · 25 monitoring · 26 node add/remove | 1 guest, kept deliberately | |
-| **H. Recovery** | 27 full-cluster recovery · teardown | 1 guest | |
+| **G. Ceph day-2** | 18 RADOS underneath · 19 maintenance mode · 20 restricted user · 21 failure drill · 22 disk replacement · 23 CephFS snapshots · 24 replication cost · 25 scrub · 26 monitoring · 27 node add/remove | 2 guests for 18, then 1 kept deliberately | |
+| **H. Recovery** | 28 full-cluster recovery · teardown | 1 guest | |
 
 **Part D needs the load-balancer build, which is on by default.** The four Octavia
 containers cost 1.4 GB all the time — ordinary here, where `neutron_server` alone is
@@ -158,7 +155,8 @@ figures above; skipping cleanups does not.
 
 Part G keeps a workload running on purpose. Watching a web page keep serving while an
 OSD is destroyed is the entire point of replication, and it costs nothing to leave one
-512 MB instance up.
+512 MB instance up. Keep **both** guests from Part F until Exercise 18 is done — it
+restores a volume onto the second one — then retire whichever you like.
 
 Do Part H last: filling the cluster disrupts everything else, and its cleanup is the
 teardown anyway.
@@ -196,7 +194,37 @@ OS flavor create m1.lab --ram 512 --vcpus 1 --disk 2
 
 OS keypair create labkey > /etc/openstack-lab/labkey.pem
 chmod 600 /etc/openstack-lab/labkey.pem
+
+# a way in. Neutron's 'default' group allows all egress but ingress ONLY from
+# members of itself -- so without this, nothing you boot is reachable at all
+OS security group rule create --proto tcp --dst-port 22 default
+OS security group rule create --proto icmp default
 ```
+
+**That last pair is not optional, and it is the step people miss.** A freshly created
+project's `default` security group has exactly two ingress rules, and both are scoped to
+the group itself:
+
+```bash
+OS security group rule list <default-sg-id> -f value \
+  -c Direction -c "Remote IP Prefix" -c "Remote Security Group"
+```
+
+```
+ingress  None  <the group's own id>
+ingress  None  <the group's own id>
+egress   None  None
+egress   None  None
+```
+
+No ingress from any address. An instance booted into it gets a floating IP, reaches
+`ACTIVE`, and answers nothing — `ssh` sits until it times out with
+`connect to host ... port 22: Connection timed out`. Nothing in the console log looks
+wrong, because nothing is: the packets are dropped before they arrive.
+
+Note also that there is a `default` group **per project**, so `security group rule list
+default` fails with "More than one SecurityGroup exists with the name 'default'" once
+Exercise 17 adds a second tenant. Use the ID.
 
 The image comes from Exercise 2. Everything else the lab needs is above.
 
@@ -233,8 +261,8 @@ mkdir -p /mnt/alp && mount ${LO}p2 /mnt/alp
 ConfigDrive is never tried, no SSH key is injected and you cannot log in:
 
 ```bash
-grep -n 'datasource_list' /mnt/alp/etc/cloud/cloud.cfg      # line 105 overrides it
-sed -i '105s/.*/datasource_list: ["ConfigDrive", "OpenStack", "NoCloud", "None"]/' \
+grep -n 'datasource_list' /mnt/alp/etc/cloud/cloud.cfg   # the nocloud_ variant pins it
+sed -i 's/^datasource_list:.*/datasource_list: ["ConfigDrive", "OpenStack", "NoCloud", "None"]/' \
   /mnt/alp/etc/cloud/cloud.cfg
 ```
 
@@ -295,6 +323,26 @@ FIP=$(OS floating ip create public -f value -c floating_ip_address)
 OS server add floating ip web1 "$FIP"
 ssh -i /etc/openstack-lab/labkey.pem alpine@"$FIP"
 ```
+
+**From the host.** That `ssh` runs inside the VM, where floating IPs work. To get a
+shell from macOS you need the key and a way in. Copy the key out once:
+
+```bash
+# on macOS
+container machine run -n openstack-lab --root -- cat /etc/openstack-lab/labkey.pem > labkey.pem
+chmod 600 labkey.pem
+```
+
+Then publish the instance's SSH port and connect:
+
+```bash
+lab-expose 12222 "$FIP":22                      # in the VM; it prints the mapping
+ssh -p 12222 -i labkey.pem alpine@<vm-ip>       # on macOS
+```
+
+`labkey.pem` is a private key and is already in `.gitignore` — do not commit it. Every
+later exercise that says "on web1" or "on share1" assumes a shell; either route gives
+you one, and the rest of this guide does not repeat these two steps.
 
 Boot takes about 15 seconds, and SSH is answering within about 80. If the instance is `ACTIVE` but unreachable, read the
 console before anything else — it is almost always visible there:
@@ -396,6 +444,18 @@ sudo mount /dev/vdb /mnt/d && sudo cat /mnt/d/proof.txt
 
 The file is there, on an instance that never wrote it — the volume, not the instance,
 is where the data lives. Timings on this lab: detach 9s, reattach 6s.
+
+**From the host.** Read the file back from macOS, which proves the volume moved without
+trusting the VM's own shell:
+
+```bash
+lab-expose 12222 <backend-floating-ip>:22
+ssh -p 12222 -i labkey.pem alpine@<vm-ip> 'sudo mount /dev/vdb /mnt/d; sudo cat /mnt/d/proof.txt'
+# persistent-data
+```
+
+Check `ls /dev/vd*` first if the instance already has another volume attached — the new
+one is not always `vdb`.
 
 **In the web UI.** Horizon → Project → Volumes → Volumes → Create Volume, then Manage
 Attachments. Extend and Snapshot are on the same dropdown.
@@ -550,6 +610,19 @@ inbound connection are always permitted. So you can stop a service initiating
 connections without stopping it doing its job — which is exactly what you want from a
 compromised-backend scenario.
 
+**From the host.** The two `wget`s above are deliberately guest-to-guest on internal
+addresses, because the rule being tested is scoped to a security group — that cannot be
+demonstrated from outside the cloud. What the host *can* confirm is that `web` still
+serves while the backend is locked down:
+
+```bash
+lab-expose 18080 <web-floating-ip>
+curl http://<vm-ip>:18080/
+```
+
+If that answers, the egress restriction did its job without breaking the service. The
+isolation itself stays a from-guest test.
+
 ### Watch a rule take effect live
 
 Rules apply to running instances immediately; no reboot, no re-attach:
@@ -595,6 +668,16 @@ ssh -i /etc/openstack-lab/labkey.pem alpine@$VIP hostname     # backend
 The same address, a different machine, in about ten seconds. This is the crude version
 of what Octavia would do for you — and it is genuinely how small clouds handle
 failover before they have LBaaS.
+
+**From the host.** The same check across the move, from macOS:
+
+```bash
+lab-expose 12222 "$VIP":22
+ssh -p 12222 -i labkey.pem alpine@<vm-ip> hostname     # web, then backend after the move
+```
+
+The forward follows the floating IP, not the instance, so it keeps working after the
+reassignment — which is the whole point of the exercise.
 
 **Watch out for orphans.** A floating IP released from a deleted instance stays
 allocated to your project and keeps consuming quota. They accumulate invisibly:
@@ -746,6 +829,16 @@ sleep 30
 for i in $(seq 1 6); do curl -s http://$FIP/; done | sort | uniq -c    # 3 and 3
 ```
 
+**From the host.** Balance the same VIP from macOS:
+
+```bash
+lab-expose 18080 "$FIP"                                        # in the VM
+for i in $(seq 1 10); do curl -s http://<vm-ip>:18080/; done | sort | uniq -c
+```
+
+You get the same split. The forward is a single TCP proxy, so it does not add any
+balancing of its own — what you are measuring is still Octavia.
+
 The health monitor re-admits it on its own. That is the difference between a load
 balancer and a floating IP: one is a control loop, the other is a command you have to
 remember to run.
@@ -863,9 +956,16 @@ for i in $(seq 1 6); do rm -f /tmp/j$i; curl -s -c /tmp/j$i http://$FIP/; done |
 **This is the demo that works in a browser.** Load the page, reload as much as you like,
 you stay put. Open a private window and you may well land on the other server.
 
-To do it in your own browser rather than with `curl`, publish the VIP first —
-`lab-expose 18080 $FIP` — and open `http://<vm-ip>:18080/`. See
-[Reaching a workload from your own browser](#reaching-a-workload-from-your-own-browser).
+**From the host.** This is the one exercise that genuinely wants a real browser, since
+private windows are the demonstration and a `curl` cookie jar only imitates them:
+
+```bash
+lab-expose 18080 "$FIP"          # in the VM
+open http://<vm-ip>:18080/       # on macOS
+```
+
+Reload and you stay on one server; open a private window and you may land on the other.
+See [Reaching a workload from your own browser](#reaching-a-workload-from-your-own-browser).
 
 ### Look at the cookie
 
@@ -946,6 +1046,16 @@ OS server delete "$CID"
   4s --- NO ANSWER ---
   6s server-web2
 ```
+
+**From the host.** Polling from macOS measures the failover across the same NAT a real
+user would traverse, which is the more honest number:
+
+```bash
+lab-expose 18080 "$FIP"                                                  # in the VM
+while true; do curl -s --max-time 2 http://<vm-ip>:18080/ || echo '--- NO ANSWER ---'; sleep 2; done
+```
+
+Kill the master amphora as above and count the gaps.
 
 **One failed request out of ninety.** The backup held the VIP within a single two-second
 poll, and traffic carried on round-robining across both backends as though nothing had
@@ -1058,6 +1168,18 @@ wget -qO- http://<share2-floating-ip>/
 # <h1>created by share1</h1>
 ```
 
+**From the host.** Same request from macOS:
+
+```bash
+lab-expose 18080 <share2-floating-ip>
+curl http://<vm-ip>:18080/
+# <h1>created by share1</h1>
+```
+
+Only the HTTP result is checked from the host. The NFS export itself is deliberately not
+mounted on macOS — it exists for workloads running inside the cloud, which is the case
+the exercise is about.
+
 `share2` is serving a file it never wrote. Write from `share2` and `share1` sees it
 just as fast — the filesystem is the shared state, not either instance.
 
@@ -1105,6 +1227,14 @@ wget -qO- http://172.24.4.1:8100/assets/asset.txt
 # served-from-ceph-object-storage
 ```
 
+**From the host.** The object gateway is already published on the VM's own address, so
+this is the one workload test that needs no `lab-expose` at all:
+
+```bash
+curl http://<vm-ip>:8100/assets/asset.txt
+# served-from-ceph-object-storage
+```
+
 **Use path-style URLs.** s3cmd prints a "Public URL" in virtual-host form
 (`http://assets.127.0.0.1:8100/asset.txt`) which needs wildcard DNS and will not
 resolve here. `http://<host>:8100/<bucket>/<key>` always works.
@@ -1116,7 +1246,7 @@ RGW is not registered as a Swift endpoint in this lab.
 **In the web UI.** Ceph dashboard → Object Gateway → Buckets. Horizon has no view of
 it, since the gateway is not registered in Keystone.
 
-**Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 25 uses
+**Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 26 uses
 the cluster's usage figures. Delete `share2` now:
 `OS server delete share2`.
 
@@ -1267,6 +1397,14 @@ wget -qO- http://<that-ip>/
 # <h1>built by heat</h1>
 ```
 
+**From the host.** The stack output is a floating IP like any other:
+
+```bash
+lab-expose 18080 <that-ip>
+curl http://<vm-ip>:18080/
+# <h1>built by heat</h1>
+```
+
 Three resources — port, server, floating IP — created in dependency order and tracked
 as one unit:
 
@@ -1382,11 +1520,256 @@ above disappears, which is worth trying once to see the difference.
 **In the web UI.** Horizon → Identity → Projects / Users. Log out and back in as
 `demo-user` to see the same empty instance list.
 
-**Cleanup.** Keep the project — Exercise 18 uses it, and an idle project costs nothing.
+**Cleanup.** Keep the project — Exercise 19 uses it, and an idle project costs nothing.
 
 ---
 
-## Exercise 18 — Ceph maintenance mode
+## Exercise 18 — RADOS: the object store underneath all of it
+
+**The situation.** A volume is the wrong size, or slow, or apparently missing, and you
+have to answer one question before you can fix anything: is this an OpenStack problem
+or a Ceph problem? Everything so far went through Cinder, Glance, Nova, CephFS or S3,
+and every one of those is a *client* of the same thing underneath — **RADOS**, the
+object store the whole of Ceph is built on. This exercise takes the lid off: you will
+write an object into RADOS by hand, watch a filesystem you create turn into objects,
+and then back a volume up and restore it onto a different instance without Cinder
+being involved at all.
+
+### Everything is a RADOS pool
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- rados lspools
+```
+
+```
+.mgr
+glance-images                 <- Exercise 2's image
+cinder-volumes                <- Exercise 4's volume
+nova-vms                      <- every instance's root disk
+.rgw.root
+default.rgw.log
+default.rgw.control
+default.rgw.meta
+default.rgw.buckets.index
+default.rgw.buckets.data      <- Exercise 13's bucket
+cephfs.labfs.meta
+cephfs.labfs.data             <- Exercise 12's shared filesystem
+.nfs
+```
+
+Thirteen pools, and not one of them belongs to a different storage system. RBD, CephFS
+and the S3 gateway are three interfaces onto one object store:
+
+```
+Cinder volume ─ librbd ──┐
+CephFS mount ─ libcephfs ├─ librados ── RADOS ── OSDs
+S3 bucket ──── RGW ──────┘
+```
+
+### Put an object in by hand
+
+Make a scratch pool of your own. Note the `1` — that is the PG count:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool create scratch 1
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool set scratch pg_autoscale_mode off
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool application enable scratch rados
+```
+
+Ask for the usual `8` and Ceph refuses, which is worth seeing:
+
+```
+Error ERANGE: pg_num 8 size 3 for this pool would result in 253 cumulative PGs per OSD
+(759 total PG replicas on 3 'in' root OSDs by crush rule) which exceeds the
+mon_max_pg_per_osd value of 250
+```
+
+Thirteen pools on three OSDs have nearly spent the cluster's PG budget. **Placement
+groups are a finite resource you allocate, not free metadata** — the same limit that
+bites in Exercise 27 when the OSD count drops.
+
+Turning the autoscaler off is what keeps it at one. Leave it on and Ceph grows the pool
+to `pg_num 32` within a minute or two — sensible for a pool it expects you to fill,
+wasteful for one holding a single 30-byte object, and enough to push a small cluster
+back into `too many PGs per OSD`. Confirm it stayed put:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool ls detail | grep scratch
+# pool 16 'scratch' replicated size 3 ... pg_num 1 pgp_num 1 autoscale_mode off
+```
+
+Now write, list, stat and read back. All four run inside the same `cephadm shell`,
+because that shell is its own container with its own `/tmp`:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- bash -c '
+  echo "the lab put this here by hand" > /tmp/hello.txt
+  rados -p scratch put greeting /tmp/hello.txt
+  rados -p scratch ls
+  rados -p scratch stat greeting
+  rados -p scratch get greeting /tmp/back.txt
+  cat /tmp/back.txt
+'
+```
+
+```
+greeting
+scratch/greeting mtime 2026-09-03T20:07:04.000000+0000, size 30
+the lab put this here by hand
+```
+
+That is the whole storage system in four commands: a named object, in a pool, with a
+size and an mtime. Everything else in this guide is a convention on top of it.
+
+### Your volume is not stored as objects — it *is* objects
+
+```bash
+OS volume create --size 1 rados-demo
+VID=$(OS volume show rados-demo -f value -c id)
+rbd -n client.cinder --keyring /etc/ceph/ceph.client.cinder.keyring \
+  info cinder-volumes/volume-$VID
+```
+
+```
+rbd image 'volume-65a1aeca-7dba-4482-9f61-b1af1620fa48':
+        size 1 GiB in 256 objects
+        order 22 (4 MiB objects)
+        block_name_prefix: rbd_data.809037bf8227
+```
+
+A 1 GiB volume is **256 objects of 4 MiB**, sharing a name prefix. Count them before
+you write anything:
+
+```bash
+PFX=rbd_data.809037bf8227
+incus exec ceph-node1 -- cephadm shell -- rados -p cinder-volumes ls | grep -c $PFX
+# 0
+```
+
+Zero — RBD images are thin, so an empty volume costs nothing. Now attach it and make a
+filesystem:
+
+```bash
+OS server add volume share2 rados-demo
+ssh -i /etc/openstack-lab/labkey.pem alpine@<share2-floating-ip>
+  ls /dev/vd*                       # find the device that just appeared
+  sudo mkfs.ext4 -F /dev/vdb
+  sudo mkdir -p /mnt/d && sudo mount /dev/vdb /mnt/d
+  echo written-by-share2 | sudo tee /mnt/d/proof.txt
+  sudo sync && sudo umount /mnt/d
+```
+
+> **Check which device appeared.** It is `/dev/vdb` only if nothing else is attached.
+> If the instance already has a volume, yours will be `/dev/vdc` — `ls /dev/vd*` before
+> and after the attach and use the difference. Running `mkfs` on the wrong one destroys
+> another exercise's data.
+
+Count again:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- rados -p cinder-volumes ls | grep -c $PFX
+# 8
+```
+
+**Eight objects.** An empty ext4 filesystem plus one small file is 32 MiB of allocated
+extents, and nothing else was written — not 256 objects, because RBD only creates an
+object when something lands in it. That is why a 1 GiB volume can cost 32 MiB.
+
+### Back it up underneath OpenStack, restore it somewhere else
+
+Detach it first so the filesystem is consistent, then export the RBD image to a plain
+file. Cinder is not involved and does not need to be:
+
+```bash
+OS server remove volume share2 rados-demo
+rbd -n client.cinder --keyring /etc/ceph/ceph.client.cinder.keyring \
+  export cinder-volumes/volume-$VID /tmp/rados-demo.img
+ls -lh /tmp/rados-demo.img          # 1.0G -- export is not sparse
+strings /tmp/rados-demo.img | grep written-by-share2
+```
+
+The file really contains your data. Now restore it as a **new** volume and give it to a
+**different** instance. Create the volume through Cinder so it is tracked, then replace
+its backing image with the backup:
+
+```bash
+OS volume create --size 1 rados-restored
+RID=$(OS volume show rados-restored -f value -c id)
+K="-n client.cinder --keyring /etc/ceph/ceph.client.cinder.keyring"
+rbd $K rm cinder-volumes/volume-$RID
+rbd $K import --image-feature layering /tmp/rados-demo.img cinder-volumes/volume-$RID
+```
+
+`--image-feature layering` pins the imported image to a minimal feature set. Cinder's
+own volumes carry the full default set (`layering, exclusive-lock, object-map,
+fast-diff, deep-flatten`), and both attach here — the explicit flag just makes the
+restored image's features something you chose rather than inherited. Hand it to the
+other instance and read the file:
+
+```bash
+OS server add volume share1 rados-restored
+ssh -i /etc/openstack-lab/labkey.pem alpine@<share1-floating-ip>
+  ls /dev/vd*                       # on this lab it arrived as /dev/vdc
+  sudo mkdir -p /mnt/r && sudo mount /dev/vdc /mnt/r
+  sudo cat /mnt/r/proof.txt
+  # written-by-share2
+```
+
+**From the host.** Same check from macOS, using the key and port-forward from
+Exercise 3:
+
+```bash
+lab-expose 12222 <share1-floating-ip>:22        # in the VM
+ssh -p 12222 -i labkey.pem alpine@<vm-ip> 'sudo cat /mnt/r/proof.txt'
+# written-by-share2
+```
+
+`share1` is reading a file it never wrote, from a volume Cinder created empty, whose
+contents arrived through `rbd import`. Cinder tracks names and attachments; **the bytes
+live in RADOS**, and at that layer a volume is just a file you can copy.
+
+### What to take away
+
+- **One object store, many interfaces.** Block, file and S3 are libraries over RADOS.
+  A problem in all three at once is a Ceph problem; a problem in one is not.
+- **`rbd export` is a backup that does not need OpenStack.** It works when the APIs are
+  down, which is exactly when you need it — see Exercise 28.
+- **Thin means thin.** 8 objects for a fresh filesystem, 256 only if you fill it.
+- **PGs are budgeted.** `mon_max_pg_per_osd` will refuse a pool you have no room for.
+- **Restoring below the API works, and Cinder will not notice.** Useful in a real
+  recovery, and a good reason to keep those keyrings protected.
+
+**In the web UI.** Ceph dashboard → Pools lists `scratch` alongside the OpenStack pools,
+with `rados` in its Applications column where the others say Block, File system or
+Object — that tag is how Ceph records which interface owns a pool.
+
+Block → Images is the more interesting page, because it disagrees with what you just
+measured. It shows `volume-<id>` as **1 GiB, 256 objects, 4 MiB object size** — but you
+counted 8 objects on the CLI. Both are right: the dashboard reports the *provisioned*
+count (size ÷ object size), and `rados ls` reports what has actually been allocated.
+Size a cluster from that column and you overestimate by the whole thin-provisioning
+ratio.
+
+There is no object browser anywhere in the dashboard. RADOS itself is CLI only, which is
+the point: the dashboard shows you the interfaces, not the substrate.
+
+**Cleanup.**
+
+```bash
+OS server remove volume share1 rados-restored
+OS volume delete rados-restored rados-demo
+incus exec ceph-node1 -- cephadm shell -- ceph config set mon mon_allow_pool_delete true
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool rm scratch scratch --yes-i-really-really-mean-it
+incus exec ceph-node1 -- cephadm shell -- ceph config set mon mon_allow_pool_delete false
+rm -f /tmp/rados-demo.img
+```
+
+Pool deletion is disabled by default and you turn it back off afterwards, for the same
+reason `full-ratio` goes back to 0.95 in Exercise 28.
+
+---
+
+## Exercise 19 — Ceph maintenance mode
 
 **The situation.** You need to reboot a storage node — a kernel update, a firmware
 patch, moving a machine. The moment the OSD goes down Ceph will start re-replicating
@@ -1428,7 +1811,7 @@ idea, finer grained.
 
 ---
 
-## Exercise 19 — Scoping credentials with a restricted Ceph user
+## Exercise 20 — Scoping credentials with a restricted Ceph user
 
 **The situation.** A monitoring tool, or a backup script, wants Ceph credentials. It
 needs to read volumes; it has no business writing to them. Handing it `client.admin`
@@ -1476,7 +1859,7 @@ can do no harm, which is the point.
 
 ---
 
-## Exercise 20 — Lose a disk while the service is running
+## Exercise 21 — Lose a disk while the service is running
 
 **The situation.** 03:00, a disk fails. The page says `HEALTH_WARN` and a third of your
 objects are degraded. The question your manager will ask at 09:00 is not "what broke"
@@ -1518,6 +1901,18 @@ rbd -n client.cinder --keyring /etc/ceph/ceph.client.cinder.keyring ls cinder-vo
 # still lists
 ```
 
+**From the host.** Serving the page from macOS while an OSD is missing proves it end to
+end, rather than from the hypervisor that hosts the storage:
+
+```bash
+lab-expose 18080 <share1-floating-ip>                          # in the VM
+while true; do curl -s --max-time 3 http://<vm-ip>:18080/; sleep 1; done
+```
+
+Leave that running across the `daemon stop` and `daemon start` below. The page keeps
+answering throughout — that is the entire claim of this exercise, and it is worth
+watching from outside the cloud rather than taking on trust.
+
 The workload never noticed. Bring the disk back:
 
 ```bash
@@ -1535,9 +1930,9 @@ version of this exercise.
 
 ---
 
-## Exercise 21 — Replace a failed disk properly
+## Exercise 22 — Replace a failed disk properly
 
-**The situation.** The disk from Exercise 20 is not coming back — it is genuinely
+**The situation.** The disk from Exercise 21 is not coming back — it is genuinely
 dead. You need to remove it from the cluster, put a new one in, and get back to full
 redundancy. Doing this in the wrong order leaves half-states that block the
 replacement, which is why it is worth rehearsing before it is urgent.
@@ -1601,7 +1996,7 @@ in this lab it cannot — see the note about `ceph orch device ls` in the build 
 
 ---
 
-## Exercise 22 — Filesystem snapshots that cost nothing
+## Exercise 23 — Filesystem snapshots that cost nothing
 
 **The situation.** Someone is about to run a migration script against the shared
 document root. You want a restore point, you want it in one command, and you do not
@@ -1613,16 +2008,17 @@ are a directory you create.
 The VM's kernel has no CephFS driver, so mount it with the userspace client:
 
 ```bash
-apt-get update && apt-get install -y ceph-fuse
 incus exec ceph-node1 -- cat /etc/ceph/ceph.client.admin.keyring > /etc/ceph/ceph.client.admin.keyring
 chmod 600 /etc/ceph/ceph.client.admin.keyring
 mkdir -p /mnt/cephfs && ceph-fuse -n client.admin /mnt/cephfs
 ```
 
-**`apt-get update` first, always, in this VM.** The machine image ends with
-`rm -rf /var/lib/apt/lists/*`, so a freshly built machine has no package lists and apt
-answers `E: Unable to locate package` for anything you ask for — including packages
-that certainly exist. It is not a broken mirror or a missing repository.
+**Nothing to install.** `ceph-fuse` is in the machine image, from the same pinned
+`download.ceph.com/debian-20.2.2` repo as `ceph-common`. That is deliberate rather than
+convenient: installing it here would mean an `apt-get update` inside a machine whose
+whole premise is a pinned Ceph version, and a mismatched client cannot read the cephx
+keys a Tentacle cluster mints. Nothing in this lab asks you to install packages in the
+VM, and if you find yourself doing so, something is wrong.
 
 Now the whole feature:
 
@@ -1661,7 +2057,7 @@ still using it.
 
 ---
 
-## Exercise 23 — What replication actually costs you
+## Exercise 24 — What replication actually costs you
 
 **The situation.** Someone asks for a 10 TB volume and you have 20 TB of disk. You have
 to explain why the answer is no. Replication is the single biggest factor in what a
@@ -1717,7 +2113,7 @@ no redundancy at all while it recovers:
 incus exec ceph-node1 -- cephadm shell -- ceph osd pool set cinder-volumes size 3
 ```
 
-This is also the answer to the capacity incident in Exercise 27: an image is charged
+This is also the answer to the capacity incident in Exercise 28: an image is charged
 at `size × replication`, so a 3.5 GB image costs 10.5 GB of cluster.
 
 **In the web UI.** Ceph dashboard → Pools shows size, usage and the same MAX AVAIL.
@@ -1727,7 +2123,7 @@ at `size × replication`, so a 3.5 GB image costs 10.5 GB of cluster.
 
 ---
 
-## Exercise 24 — Verify the data is really intact
+## Exercise 25 — Verify the data is really intact
 
 **The situation.** Ceph tells you `HEALTH_OK`, which means every object is *present*
 and the right number of copies exist. It does not, by itself, mean the bytes are still
@@ -1770,7 +2166,7 @@ timestamps.
 
 ---
 
-## Exercise 25 — The monitoring you already have
+## Exercise 26 — The monitoring you already have
 
 **The situation.** You want graphs of cluster throughput and OSD latency, and you are
 about to go and install Prometheus. You do not need to: `cephadm` deployed the whole
@@ -1822,7 +2218,7 @@ With that done, the embedded panels work:
 - **Cluster → OSDs → Overall Performance** — read/write latency percentiles, PG
   distribution, device class breakdown. The usual first stop when something is "slow"
 - **Cluster → Pools → Overall Performance** — per-pool throughput, next to the MAX
-  AVAIL from Exercise 23
+  AVAIL from Exercise 24
 
 Grafana on its own at `https://<VM_IP>:3000/dashboards` has about twenty pre-built Ceph
 dashboards the embedded views only sample — *Ceph Cluster - Advanced*, *Ceph Pool
@@ -1874,7 +2270,7 @@ CephPGsDamaged              critical  pgs           300s
 ```
 
 `CephOSDNearFull` fires at 85% after five minutes. That is the alert that would have
-caught Exercise 27 while it was still recoverable, rather than at 95% when writes had
+caught Exercise 28 while it was still recoverable, rather than at 95% when writes had
 already stopped.
 
 **Nothing is delivered, though.** Alertmanager has no receiver configured, so rules
@@ -1883,7 +2279,7 @@ fire into the dashboard and stop there. Wiring one up — email, a webhook, Slac
 
 ### Do it with something happening
 
-Re-run the failure drill from Exercise 20 with **Cluster → OSDs** open. Watching the
+Re-run the failure drill from Exercise 21 with **Cluster → OSDs** open. Watching the
 degraded-object count climb and drain away, and the latency panel spike, is far more
 legible than reading `ceph -s` in a loop — and it is how you will actually experience
 the real thing.
@@ -1894,7 +2290,7 @@ the real thing.
 
 ---
 
-## Exercise 26 — Add a node, then take it away again
+## Exercise 27 — Add a node, then take it away again
 
 **The situation.** The cluster is filling up and you have budget for another storage
 node. Later, that node is being decommissioned. Both directions are routine, and both
@@ -1929,6 +2325,28 @@ lxc.apparmor.profile = unconfined"
 incus start ceph-node4
 ```
 
+**Now the step that is easy to miss.** The container can see `/dev/dm-3`, but not the
+*LVM name* for it, and `ceph orch daemon add osd ceph-node4:ceph-vg4/osd4` resolves that
+name through LVM inside the node. Create the device nodes there and check them:
+
+```bash
+incus exec ceph-node4 -- dmsetup mknodes
+incus exec ceph-node4 -- vgmknodes
+incus exec ceph-node4 -- ls -lL /dev/ceph-vg4/osd4     # major:minor must match the VM
+dmsetup ls | grep ceph--vg4-osd4                       # ... this one
+incus exec ceph-node4 -- dd if=/dev/ceph-vg4/osd4 of=/dev/null bs=1M count=1
+```
+
+Both numbers were `251:3` on this lab, and the `dd` returned without error.
+
+**Skip this and the OSD is never created**, in the most unhelpful way possible: the add
+command exits `0`, prints nothing at all, and leaves the cluster with three OSDs. There
+is no error to search for. `ceph orch device ls ceph-node4` stays empty either way, so
+it tells you nothing — the `dd` through the LVM path is the check that actually
+discriminates. Reading `/dev/dm-3` directly is not the same test and succeeds even when
+the OSD add is going to fail. This is the same work `03-provision.sh` does for
+nodes 1–3 in its `_make_device_nodes` and `_verify_mapping` helpers.
+
 Give cephadm its key, then add the host and the disk:
 
 ```bash
@@ -1942,7 +2360,7 @@ incus exec ceph-node1 -- cephadm shell -- ceph orch daemon add osd ceph-node4:ce
 # Created osd(s) 3 on host 'ceph-node4'
 ```
 
-Watch it take load — `11 remapped pgs` while Ceph rebalances onto the new disk:
+Watch it take load — `28 remapped pgs` while Ceph rebalances onto the new disk:
 
 ```bash
 incus exec ceph-node1 -- cephadm shell -- ceph osd tree
@@ -1968,12 +2386,24 @@ incus exec ceph-node1 -- cephadm shell -- ceph orch host rm ceph-node4 --force
 
 Removing the host is not the end, and this is the part worth remembering:
 
-**A stranded monitor.** cephadm may have placed a mon on the new node, and removing
-the host does not remove it from the monmap:
+**A stranded monitor.** cephadm places a mon on the new node — it did here, within
+seconds of the host joining — and removing the host does **not** remove it from the
+monmap. Right after `orch host rm` the cluster still reports four:
+
+```
+mon: 4 daemons, quorum ceph-node1,ceph-node3,ceph-node2,ceph-node4
+```
+
+It is still in quorum at that point, because the container is still running, so nothing
+looks wrong. Delete the container and the same monmap becomes a fault:
 
 ```
 health: HEALTH_WARN  1/4 mons down, quorum ceph-node1,ceph-node3,ceph-node2
 ```
+
+Check `ceph mon dump` after removing a host rather than waiting for the warning — the
+warning arrives only once the machine is genuinely gone, which in a real decommission
+may be days later.
 
 ```bash
 incus exec ceph-node1 -- cephadm shell -- ceph mon dump | grep mon.
@@ -1983,11 +2413,16 @@ incus exec ceph-node1 -- cephadm shell -- ceph mon rm ceph-node4
 A cluster running with a permanently-down mon has lost failure tolerance it thinks it
 has — on a 4-mon map you now need 3 of the remaining 3 for quorum.
 
-**PGs per OSD.** Fewer OSDs, same number of PGs:
+**PGs per OSD.** Fewer OSDs, and often *more* PGs than you started with:
 
 ```
 too many PGs per OSD (307 > max 250)
 ```
+
+Both halves of that move against you. Removing the OSD divides the same PGs across
+fewer disks, and while the fourth OSD was in, the autoscaler saw spare headroom and grew
+two nearly-empty pools from 1 PG to 32 each. The cluster came back from this exercise
+with more PGs than it had before it — measured here as 245 before, 307 after.
 
 Either reduce PG counts or, on a small cluster, raise the limit:
 
@@ -2022,7 +2457,7 @@ and 3 OSDs up and in before moving on.
 
 ---
 
-## Exercise 27 — Recover a cluster that has filled up
+## Exercise 28 — Recover a cluster that has filled up
 
 **The situation.** Someone uploads a large image, or a runaway job writes until there
 is no space left. Ceph stops accepting writes, Glance starts returning `502`, and
@@ -2050,16 +2485,17 @@ OS image create big-image --file /tmp/big.raw --disk-format raw --container-form
 Use random data, not zeros — a file of zeros may not consume the space you expect once
 it reaches the cluster, and the point of this exercise is to actually run out.
 
-One 3.5 GB image is 10.5 GB of cluster. Upload it two or three times under different
-names, and the cluster is full:
+One 3.5 GB image is 10.5 GB of cluster. Upload it under four different names and the
+cluster is full — measured on this lab, each upload moved the cluster 23 points:
+23.67% → 46.46% → 69.64% → 89.04% → 96.10%.
 
 ```bash
 incus exec ceph-node1 -- cephadm shell -- ceph df
 ```
 
 ```
-TOTAL           45 GiB   1.9 GiB avail   43 GiB used   95.74%
-glance-images   13 GiB stored   39 GiB used   100.00%   MAX AVAIL 0 B
+TOTAL           45 GiB   1.8 GiB avail   43 GiB used   96.10%
+glance-images   14 GiB stored   41 GiB used   100.00%   MAX AVAIL 0 B
 ```
 
 ### What it looks like
@@ -2069,9 +2505,10 @@ incus exec ceph-node1 -- cephadm shell -- ceph health detail
 ```
 
 ```
-HEALTH_ERR 3 full osd(s); 13 pool(s) full
-[ERR] OSD_FULL: 3 full osd(s)
-    osd.0 is full
+HEALTH_ERR 1 backfillfull osd(s); 2 full osd(s); 13 pool(s) full
+[WRN] OSD_BACKFILLFULL: 1 backfillfull osd(s)
+    osd.1 is backfill full
+[ERR] OSD_FULL: 2 full osd(s)
 ```
 
 Every pool shows `MAX AVAIL 0 B`. Glance returns
@@ -2091,8 +2528,10 @@ deliberate loosening of a safety limit:
 incus exec ceph-node1 -- cephadm shell -- ceph osd set-full-ratio 0.99
 ```
 
-Now find what is actually consuming space and remove it. Work at the RBD level, since
-the OpenStack APIs may still be failing:
+Now find what is actually consuming space and remove it. Once the ratio is raised,
+`OS image delete` usually starts working again — on this lab it did, immediately. The
+RBD-level route below is what you fall back on when it does not, because it bypasses
+Glance entirely:
 
 ```bash
 KG="-n client.glance --keyring /etc/ceph/ceph.client.glance.keyring"
@@ -2146,8 +2585,9 @@ health panel shows the OSD_FULL error. The dashboard keeps working while the clu
 is full, which makes it a better vantage point than the OpenStack APIs during this
 incident.
 
-**Cleanup.** Delete `big-image` and `/tmp/*.raw`. Confirm `HEALTH_OK` and sensible
-`MAX AVAIL` on every pool.
+**Cleanup.** Delete every `big-image-*` and `/tmp/*.raw`. Confirm `HEALTH_OK` and
+sensible `MAX AVAIL` on every pool. On this lab the cluster came back to 24.13% and
+`HEALTH_OK` within a couple of minutes of the deletes.
 
 ---
 

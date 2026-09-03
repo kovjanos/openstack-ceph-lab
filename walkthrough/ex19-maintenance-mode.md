@@ -1,6 +1,6 @@
-# Exercise 18 — Ceph maintenance mode (web UI)
+# Exercise 19 — Ceph maintenance mode (web UI)
 
-Guide section: [Exercise 18](../openstack-ceph-lab-exercise.md#exercise-18--ceph-maintenance-mode)
+Guide section: [Exercise 19](../openstack-ceph-lab-exercise.md#exercise-19--ceph-maintenance-mode)
 
 You need to reboot a storage node. The moment the OSD goes down Ceph starts
 re-replicating gigabytes to restore redundancy, and moves it all back five minutes
@@ -10,19 +10,19 @@ later when the node returns. That rebalance is pure waste.
 
 **Ceph dashboard → Cluster → Hosts** → the host's ⋮ menu.
 
-![Ceph hosts list with the actions menu](img/ex18-step01-ceph-hosts-list.png)
+![Ceph hosts list with the actions menu](img/ex19-step01-ceph-hosts-list.png)
 
 **Enter Maintenance** is the cephadm host operation: it stops the daemons on that host
 and sets the flags for you. Use it when you are taking the whole machine away.
 
-The other two entries matter for Exercise 26. **Start Drain** moves daemons off a host
+The other two entries matter for Exercise 27. **Start Drain** moves daemons off a host
 you intend to remove; **Remove** takes it out of the cluster.
 
 ## Step 2 — The flags themselves
 
 **Cluster → OSDs → Cluster-wide configuration → Flags.**
 
-![Cluster-wide OSD flags](img/ex18-step02-cluster-wide-osd-flags.png)
+![Cluster-wide OSD flags](img/ex19-step02-cluster-wide-osd-flags.png)
 
 **No Out** is `noout` — "this OSD is coming back, don't reshuffle". Tick it, do the
 work, untick it.
