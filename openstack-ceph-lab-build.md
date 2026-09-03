@@ -103,6 +103,7 @@ or pushed in with `sync-provision.sh`.
 | 6: Verification | **Verified** — services, compute, hypervisor, and both dashboards reachable from macOS |
 | 7: Ceph RGW / S3 | **Verified** — phase `85-rgw`; s3cmd put/get round trip, survives a machine restart |
 | 8: CephFS + NFSv4 | **Verified** — phase `86-nfs`; export mounted and read/written, survives a machine restart |
+| Monitoring (Grafana / Prometheus / Alertmanager) | **Verified** — proxied by `90-verify`; embedded panels render, URLs re-point themselves after the VM address changes |
 | Octavia / load balancing | Deferred to v3 — see Further work |
 | Manila (shared filesystems API) | Deferred to v3; CephFS + NFS covers the capability without it |
 
@@ -2751,6 +2752,31 @@ unit recreates it. This is what `kolla-net-setup.service` is for, and why it fix
 **Verified.** `container machine stop` followed by `container machine run` returns the
 lab to service unattended, including boots where the dm minor numbers shuffled and
 `ceph-lab-remap.service` repointed each node to its own volume.
+
+**Stop can fail with instances running, and it fails badly.** With three Nova instances
+up, `container machine stop` gave up after 12s:
+
+```
+Error: failed to stop container machine (cause: ... failed to delete process
+(cause: "deleteProcess: failed with errno 95: failed to write to
+/sys/fs/cgroup/container/openstack-lab-.../machine.slice/
+machine-qemu\x2d22\x2dinstance\x2d00000018.scope/libvirt/iothread1/cgroup.kill"
+```
+
+The scope it could not kill is a *guest* — `instance-00000018` is one of Nova's QEMU
+processes, nested inside the machine's own VM. The state it left behind is the
+dangerous part: `container machine ls` still reported `running`, but the guest was
+gone. No ping, every port closed, `container machine run` refused with "container is
+not running".
+
+Running `container machine stop` a second time succeeded immediately, and
+`container machine run` brought everything back to `HEALTH_OK`. So the recovery is
+trivial once you know it — but if you take the first `ls` at face value you will spend
+the next ten minutes debugging a machine that is not running.
+
+Shut the instances down first (`openstack server stop <name>`) if you want a clean stop.
+
+There is no `container machine start`; the subcommand is `container machine run`.
 
 **What shifts:** dm minor numbers. They're assigned in `vgchange` activation order,
 which varies per boot — `ceph-vg1` is *not* reliably `/dev/dm-0`. Verified: a machine
