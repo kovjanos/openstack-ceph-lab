@@ -1198,8 +1198,9 @@ In production you would align UIDs or configure idmapping instead.
 **In the web UI.** Nothing — this is Ceph and guest configuration, below the OpenStack
 API. The share is visible in the Ceph dashboard under Filesystems.
 
-**Cleanup.** Keep `share1` and `share2` for Exercise 13, then delete `share2`; a single
-guest is enough from Exercise 14 onward.
+**Cleanup.** Keep both. `share1` is the workload Part G keeps running, and Exercise 18
+restores a volume onto `share2` — it is deleted there, not here. Two 512 MB guests
+through Exercises 13-18 is 1 GB, which the 26 GB machine has spare.
 
 ---
 
@@ -1247,8 +1248,8 @@ RGW is not registered as a Swift endpoint in this lab.
 it, since the gateway is not registered in Keystone.
 
 **Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 26 uses
-the cluster's usage figures. Delete `share2` now:
-`OS server delete share2`.
+the cluster's usage figures. Keep `share2` as well; Exercise 18 needs a second instance
+to restore a volume onto, and deletes it when it is done.
 
 ---
 
@@ -1520,7 +1521,9 @@ above disappears, which is worth trying once to see the difference.
 **In the web UI.** Horizon → Identity → Projects / Users. Log out and back in as
 `demo-user` to see the same empty instance list.
 
-**Cleanup.** Keep the project — Exercise 19 uses it, and an idle project costs nothing.
+**Cleanup.** Nothing later in the guide uses `demo-project`, so delete it or keep it as
+you prefer — an idle project with no instances costs nothing but a few rows in Keystone:
+`OS project delete demo-project` and `OS user delete demo-user`.
 
 ---
 
@@ -1660,9 +1663,10 @@ ssh -i /etc/openstack-lab/labkey.pem alpine@<share2-floating-ip>
 ```
 
 > **Check which device appeared.** It is `/dev/vdb` only if nothing else is attached.
-> If the instance already has a volume, yours will be `/dev/vdc` — `ls /dev/vd*` before
-> and after the attach and use the difference. Running `mkfs` on the wrong one destroys
-> another exercise's data.
+> It is `/dev/vdb` only when nothing else is attached. Skip Exercise 14's cleanup and
+> `secret-vol` still holds `vdb`, so yours arrives as `/dev/vdc` — measured both ways on
+> this lab. Run `ls /dev/vd*` before and after the attach and use the difference.
+> Running `mkfs` on the wrong one destroys another exercise's data.
 
 Count again:
 
@@ -1709,8 +1713,8 @@ other instance and read the file:
 ```bash
 OS server add volume share1 rados-restored
 ssh -i /etc/openstack-lab/labkey.pem alpine@<share1-floating-ip>
-  ls /dev/vd*                       # on this lab it arrived as /dev/vdc
-  sudo mkdir -p /mnt/r && sudo mount /dev/vdc /mnt/r
+  ls /dev/vd*                       # /dev/vdb if you cleaned up after Exercise 14
+  sudo mkdir -p /mnt/r && sudo mount /dev/vdb /mnt/r
   sudo cat /mnt/r/proof.txt
   # written-by-share2
 ```
@@ -1758,6 +1762,7 @@ the point: the dashboard shows you the interfaces, not the substrate.
 ```bash
 OS server remove volume share1 rados-restored
 OS volume delete rados-restored rados-demo
+OS server delete share2                 # the second guest is not needed again
 incus exec ceph-node1 -- cephadm shell -- ceph config set mon mon_allow_pool_delete true
 incus exec ceph-node1 -- cephadm shell -- ceph osd pool rm scratch scratch --yes-i-really-really-mean-it
 incus exec ceph-node1 -- cephadm shell -- ceph config set mon mon_allow_pool_delete false
