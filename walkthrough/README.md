@@ -26,6 +26,12 @@ That prints both URLs and both passwords:
 | Prometheus | `http://<vm-ip>:9095/` | none |
 | Alertmanager | `http://<vm-ip>:9093/` | none |
 
+**The exercises' own workloads are not reachable from the Mac.** Floating IPs
+(`172.24.4.x`) sit behind `br-ex` with no route from macOS, so a web server you launch
+cannot be opened in your browser until you publish it: `lab-expose 18080 <floating-ip>`
+inside the VM, then `http://<vm-ip>:18080/`. Every UI in the table above is already
+forwarded and needs nothing.
+
 Load balancing adds no URL of its own — it is a panel inside Horizon, under
 Project → Network → Load Balancers. Octavia's API is on 9876, bound to the internal VIP
 and not reachable from macOS.

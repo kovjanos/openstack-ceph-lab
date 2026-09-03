@@ -1256,6 +1256,78 @@ EOF
         | sed 's/^/    amphora flavor: /' | tee -a "$LOG"
 }
 
+# Write /usr/local/sbin/lab-expose, which publishes a workload on the VM's address.
+#
+# Instances live on 172.24.4.0/24 behind br-ex, and macOS has no route there: a
+# floating IP works from inside the VM and from other guests, and from nowhere else.
+# 'route -n get' on the Mac shows those addresses going to the LAN gateway, so the
+# packets leave the machine entirely.
+#
+# A static route on macOS would fix it, but needs sudo, does not survive a reboot,
+# and points at a VM address that changes on every machine start. Forwarding a port
+# on the VM needs none of that -- macOS already reaches the VM, and the URL uses the
+# address 90-verify prints anyway. It is the same DNAT the lab already uses to bring
+# Horizon out to the host.
+write_lab_expose() {
+    cat > /usr/local/sbin/lab-expose <<'EXPOSE'
+#!/bin/bash
+# Publish a lab workload on the VM's address, so a browser on macOS can reach it.
+#
+#   lab-expose 18080 172.24.4.20        http://<vm-ip>:18080/  ->  172.24.4.20:80
+#   lab-expose 18081 172.24.4.21:8080   a port other than 80
+#   lab-expose --list                   what is published now
+#   lab-expose --clear                  remove all of them
+#
+# Not persistent: a machine restart clears these. Floating IPs change from exercise
+# to exercise anyway, so re-run it rather than expecting it to stick.
+set -uo pipefail
+IFACE=enp0s1
+
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+
+list() {
+    local n
+    n=$(iptables -t nat -S PREROUTING 2>/dev/null | grep -c 'lab-expose')
+    if [ "$n" -eq 0 ]; then echo "nothing published"; return 0; fi
+    local vmip; vmip=$(ip -br addr show "$IFACE" | awk '{print $3}' | cut -d/ -f1)
+    iptables -t nat -S PREROUTING 2>/dev/null | grep 'lab-expose' | while read -r r; do
+        local port to
+        port=$(sed -n 's/.*--dport \([0-9]*\).*/\1/p' <<<"$r")
+        to=$(sed -n 's/.*--to-destination \([0-9.:]*\).*/\1/p' <<<"$r")
+        printf '  http://%s:%s/  ->  %s\n' "$vmip" "$port" "$to"
+    done
+}
+
+case "${1:-}" in
+    --list|-l|"") list; exit 0 ;;
+    --clear|-c)
+        while iptables -t nat -S PREROUTING 2>/dev/null | grep -q 'lab-expose'; do
+            iptables -t nat -D PREROUTING $(iptables -t nat -S PREROUTING \
+                | grep -m1 'lab-expose' | sed 's/^-A PREROUTING //') 2>/dev/null || break
+        done
+        echo "cleared"; exit 0 ;;
+    --help|-h) usage ;;
+esac
+
+PORT="$1"; TARGET="${2:-}"
+[ -n "$TARGET" ] || usage
+case "$TARGET" in *:*) DEST="$TARGET" ;; *) DEST="$TARGET:80" ;; esac
+
+[[ "$PORT" =~ ^[0-9]+$ ]] || { echo "port must be a number: $PORT" >&2; exit 1; }
+if ss -tln | awk '{print $4}' | grep -q ":${PORT}$"; then
+    echo "port $PORT is already in use on the VM (ss -tlnp | grep $PORT)" >&2; exit 1
+fi
+
+iptables -t nat -A PREROUTING -i "$IFACE" -p tcp --dport "$PORT" \
+    -m comment --comment lab-expose -j DNAT --to-destination "$DEST" \
+    || { echo "could not add the rule" >&2; exit 1; }
+
+VMIP=$(ip -br addr show "$IFACE" | awk '{print $3}' | cut -d/ -f1)
+echo "http://$VMIP:$PORT/  ->  $DEST"
+EXPOSE
+    chmod 755 /usr/local/sbin/lab-expose
+}
+
 phase_90_verify() {
     os() {
         sudo -u kolla bash -lc \
@@ -1389,6 +1461,13 @@ phase_90_verify() {
     ceph_do ceph dashboard set-prometheus-api-host "http://$VM_IP:9095" >/dev/null || true
     info "monitoring URLs point at $VM_IP (grafana 3000, prometheus 9095, alertmanager 9093)"
 
+    write_lab_expose
+    exposed=$(/usr/local/sbin/lab-expose --list 2>/dev/null | grep -c 'http://' || true)
+    [ "$exposed" -gt 0 ] && {
+        info "workloads currently published to the host:"
+        /usr/local/sbin/lab-expose --list | sed 's/^/  /' | tee -a "$LOG"
+    }
+
     horizon_pw=$(sudo -u kolla grep '^keystone_admin_password:' /etc/kolla/passwords.yml | awk '{print $2}')
     s3_ak=$(awk -F' = ' '/^access_key/{print $2}' "$SHARED_DIR/s3cfg" 2>/dev/null)
 
@@ -1407,6 +1486,18 @@ phase_90_verify() {
     'ip -br addr show enp0s1'. Test the Horizon forward FROM macOS -- the DNAT
     rule matches -i enp0s1, so a local curl to 127.0.0.1:8080 always fails and
     proves nothing.
+
+=== Reaching a workload from a browser on macOS
+    Instance floating IPs (172.24.4.x) are NOT reachable from the Mac: they live
+    behind br-ex and macOS routes that range to its own LAN gateway instead. This
+    publishes one on the VM's address, which macOS already reaches:
+
+        lab-expose 18080 <floating-ip>     then open http://$VM_IP:18080/
+        lab-expose --list                  what is published now
+        lab-expose --clear                 remove them
+
+    Not persistent -- a machine restart clears it, and floating IPs change between
+    exercises anyway, so re-run it rather than expecting it to stick.
 EOF
 }
 

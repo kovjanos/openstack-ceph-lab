@@ -173,6 +173,23 @@ Ceph commands go through `incus exec ceph-node1 -- cephadm shell --`.
 
 Every address and every password is printed by `provision-lab --only 90-verify`.
 
+**Your own workloads are not on this list, and that is the one gap worth knowing.**
+Instance floating IPs (`172.24.4.x`) live behind `br-ex`, and macOS has no route to
+them — it sends that range to your LAN gateway instead. The management UIs above are
+reachable because each is explicitly forwarded; a web server you launch in an exercise
+is not. To open one in a browser on the Mac:
+
+```bash
+lab-expose 18080 172.24.4.20     # inside the VM; then open http://<vm-ip>:18080/
+lab-expose --list                # what is published
+lab-expose --clear               # remove them
+```
+
+`provision-lab --only 90-verify` prints this too. A `sudo route -n add -net
+172.24.4.0/24 <vm-ip>` on the Mac is the alternative and makes floating IPs work
+directly, but it needs sudo, does not survive a reboot, and points at an address that
+changes on every machine start.
+
 **Load balancing does not add a UI of its own.** It appears inside Horizon under
 Project → Network → Load Balancers, with a five-step create wizard covering listener,
 pool, members and monitor in one pass. The Octavia API is on port 9876 but bound to the

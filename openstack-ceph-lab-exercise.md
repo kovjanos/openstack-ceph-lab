@@ -59,6 +59,38 @@ sudo -u kolla bash -lc '. /opt/kolla/venv/bin/activate && \
 (`provision-lab` installs the Octavia one for you when the load-balancer build is
 enabled; the other two are always needed.)
 
+## Reaching a workload from your own browser
+
+Every `curl` in this guide runs **inside the VM**, where floating IPs work. From macOS
+they do not: `172.24.4.x` lives behind `br-ex`, and the Mac has no route to it —
+`route -n get 172.24.4.20` shows it heading for your LAN gateway instead, so the packets
+leave the machine entirely.
+
+That catches people out, because the management UIs *are* reachable from the Mac
+(Horizon, the Ceph dashboard, Grafana, Prometheus, S3, NFS — all forwarded already). The
+workloads you create are not.
+
+To open one in your own browser, publish it on the VM's address:
+
+```bash
+lab-expose 18080 172.24.4.20     # then open http://<vm-ip>:18080/ on the Mac
+lab-expose --list                # what is published now
+lab-expose --clear               # remove them
+```
+
+`provision-lab --only 90-verify` prints the VM's address and repeats these three lines,
+so you do not have to remember them.
+
+**Adding a route on the Mac would also work** — `sudo route -n add -net 172.24.4.0/24
+<vm-ip>` — and then floating IPs work directly, exactly as written in the exercises. It
+needs sudo, does not survive a reboot, and points at a VM address that changes on every
+machine start, so `lab-expose` is usually less trouble.
+
+Neither is persistent. Floating IPs change from one exercise to the next anyway, so
+re-run `lab-expose` rather than expecting it to stick.
+
+---
+
 ## Resource budget — read this first
 
 The exercises are sized for a **26 GB machine**, which is the default in
@@ -830,6 +862,10 @@ for i in $(seq 1 6); do rm -f /tmp/j$i; curl -s -c /tmp/j$i http://$FIP/; done |
 
 **This is the demo that works in a browser.** Load the page, reload as much as you like,
 you stay put. Open a private window and you may well land on the other server.
+
+To do it in your own browser rather than with `curl`, publish the VIP first —
+`lab-expose 18080 $FIP` — and open `http://<vm-ip>:18080/`. See
+[Reaching a workload from your own browser](#reaching-a-workload-from-your-own-browser).
 
 ### Look at the cookie
 
