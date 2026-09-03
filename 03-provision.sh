@@ -53,7 +53,24 @@ DASHBOARD_PASSWORD=ChangeMeBeforeUse
 RGW_CONTAINER_PORT=8000
 RGW_VM_PORT=8100
 
-PHASES=(10-storage 20-incus 30-nodebase 40-nodes 50-ceph 60-hostclient 70-kolla 80-deploy 85-rgw 86-nfs 90-verify)
+# Network load balancing is optional, because it is the most expensive thing in
+# this lab: four more Kolla containers, an amphora image that has to be built from
+# source on aarch64, and two 1 GB amphorae for every load balancer. A 24 GB machine
+# runs it; a smaller one should leave it off.
+#
+# The OpenStack service behind it is Octavia, which is what every setting below and
+# every error message says. The flag is named for the capability rather than the
+# project, because you should not need to know the latter to decide.
+#
+#   ENABLE_NETWORK_LOADBALANCER=yes provision-lab                 build the lab with it
+#   ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla add it to a built lab
+#
+# It cannot be a bolt-on phase alone: enable_octavia has to be in globals.yml
+# before 80-deploy, because Kolla deploys the containers there. 87-octavia only
+# does what has to happen after Glance is up.
+ENABLE_NETWORK_LOADBALANCER="${ENABLE_NETWORK_LOADBALANCER:-no}"
+
+PHASES=(10-storage 20-incus 30-nodebase 40-nodes 50-ceph 60-hostclient 70-kolla 80-deploy 85-rgw 86-nfs 87-octavia 90-verify)
 
 # --- Plumbing ----------------------------------------------------------------
 
@@ -714,6 +731,61 @@ ceph_nova_pool_name: "nova-vms"
 EOF
     fi
 
+    # Its own sentinel, so Octavia can be added to an already-deployed lab with
+    # 'ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla' -- the block above is
+    # already present and is skipped, this one gets appended.
+    if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ] && ! grep -q '^# ---- octavia ----' /etc/kolla/globals.yml; then
+        sudo -u kolla tee -a /etc/kolla/globals.yml > /dev/null <<'EOF'
+
+# ---- octavia ----
+enable_octavia: "yes"
+enable_horizon_octavia: "yes"
+
+# Two amphorae per load balancer with VRRP between them, so losing one is a
+# survivable event rather than an outage -- which is the point of the exercise.
+# SINGLE halves the memory and removes it.
+octavia_loadbalancer_topology: "ACTIVE_STANDBY"
+
+# The jobboard auto-enables with the amphora driver, and its template fills
+# jobboard_backend_hosts by iterating groups['valkey'] -- but enable_valkey is
+# false and nothing turns it on, so the worker would start with an empty backend
+# list. Either deploy valkey plus its sentinel, or turn the jobboard off. It only
+# buys resumable task flows after a worker crash, so: off.
+enable_octavia_jobboard: "no"
+
+# 'provider' expects lb-mgmt-net on a physnet, and kolla0 has no physnet mapping.
+# 'tenant' creates an o-hm0 OVS port on br-int instead: self-contained, no second
+# physnet, but a runtime interface -- so it needs recreating at boot the same way
+# kolla0 and veth-ext do.
+octavia_network_type: "tenant"
+EOF
+    fi
+
+    # octavia_network_type=tenant makes Kolla write octavia-interface.service, whose
+    # ExecStart is a hard-coded /sbin/dhclient against the o-hm0 OVS port. Ubuntu
+    # 24.04 does not ship dhclient any more -- netplan drives systemd-networkd --
+    # so the unit dies with status=203/EXEC and the deploy fails on its very last
+    # task, after everything else has succeeded. The OVS port is created and the MAC
+    # is set; only the DHCP client is absent. isc-dhcp-client is still packaged.
+    if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ] && [ ! -x /sbin/dhclient ]; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq isc-dhcp-client \
+            >/dev/null 2>&1 || die "could not install isc-dhcp-client for octavia-interface"
+        info "isc-dhcp-client installed (octavia-interface.service needs /sbin/dhclient)"
+    fi
+
+    # The amphora CA has to exist before deploy: the octavia role copies the certs
+    # into the containers, and a missing one fails the play rather than degrading.
+    #
+    # -i is required. Without it kolla-ansible looks for its packaged default,
+    # /etc/kolla/ansible/inventory/all-in-one, which this lab does not use, and
+    # stops with "Kolla inventory ... is invalid: Path does not exist".
+    if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ] && [ ! -f /etc/kolla/config/octavia/client_ca.cert.pem ]; then
+        run_logged octavia-certificates sudo -u kolla bash -lc \
+            '. /opt/kolla/venv/bin/activate && kolla-ansible octavia-certificates -i /opt/kolla/all-in-one' \
+            || die "kolla-ansible octavia-certificates failed"
+        info "octavia certificates generated"
+    fi
+
     # Ceph config and keyrings, per service. Leading tabs from cephadm's
     # generate-minimal-conf break Kolla's ini parser, so strip them.
     #
@@ -1009,6 +1081,116 @@ JSON" >/dev/null 2>&1 || die "could not apply the NFSv4-only export"
 # =============================================================================
 # 90-verify -- prove the cloud works and the data is in Ceph
 # =============================================================================
+# Properly quoted openstack wrapper. The one inside phase_90_verify interpolates
+# $*, which is fine for 'os service list' but splits any argument containing a
+# space -- and this phase passes image properties and file paths.
+oscli() {
+    sudo -u kolla bash -lc \
+        '. /opt/kolla/venv/bin/activate && \
+         OS_CLIENT_CONFIG_FILE=/etc/kolla/clouds.yaml OS_CLOUD=kolla-admin exec openstack "$@"' \
+        _ "$@"
+}
+
+phase_87_octavia() {
+    if [ "$ENABLE_NETWORK_LOADBALANCER" != yes ]; then
+        info "octavia not enabled -- ENABLE_NETWORK_LOADBALANCER=yes provision-lab --from 70-kolla adds it"
+        return 0
+    fi
+
+    local src=/opt/octavia-src dib=/opt/dib work=/opt/amphora-build
+    local img="$work/amphora-arm64-haproxy.raw"
+    local build_log=/var/log/amphora-build.log
+
+    # There is no prebuilt amphora for this architecture. Every image published at
+    # tarballs.opendev.org/openstack/octavia/test-images/ is x64 -- nine of them,
+    # not one arm64. So it gets built here, from the Octavia source at the same
+    # branch as the control plane: an amphora-agent newer than the API it reports
+    # to is a version skew you discover at the first failover, not at boot.
+    if [ ! -f "$img" ]; then
+        info "building the amphora image -- 20-40 minutes, the slowest step in the lab"
+
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            qemu-utils debootstrap kpartx python3-venv uuid-runtime dosfstools git \
+            >>"$build_log" 2>&1 || die "could not install the amphora build prerequisites"
+
+        if [ ! -x "$dib/bin/disk-image-create" ]; then
+            python3 -m venv "$dib" >>"$build_log" 2>&1
+            "$dib/bin/pip" -q install --upgrade pip >>"$build_log" 2>&1
+            "$dib/bin/pip" -q install diskimage-builder >>"$build_log" 2>&1 \
+                || die "diskimage-builder install failed -- see $build_log"
+        fi
+
+        [ -d "$src/.git" ] || git clone --depth 1 -b "$KOLLA_BRANCH" \
+            https://opendev.org/openstack/octavia "$src" >>"$build_log" 2>&1 \
+            || die "could not clone octavia at $KOLLA_BRANCH"
+
+        # stable/2026.1 accepts -a aarch64, then hands the value straight to
+        # disk-image-create and on to debootstrap -- which only knows the Debian
+        # name arm64 and dies with "Invalid Release file, no entry for
+        # main/binary-aarch64/Packages". Passing -a arm64 instead is rejected by
+        # the script's own validation. Master accepts both; backport that line.
+        local dic="$src/diskimage-create/diskimage-create.sh"
+        grep -q '"\$AMP_ARCH" != "arm64"' "$dic" || sed -i \
+            's/\[ "\$AMP_ARCH" != "aarch64" \] && \\/&\n                [ "$AMP_ARCH" != "arm64" ] \&\& \\/' "$dic"
+        bash -n "$dic" || die "the arm64 backport broke $dic"
+
+        mkdir -p "$work"
+        # -g pins the amphora-agent branch. Without it the checkout above is
+        # ignored and the agent is pulled from master, which the script announces
+        # as "using amphora-agent from the master branch" and nothing else warns
+        # about. A master agent against a 2026.1 control plane is a skew you meet
+        # at the first failover. It also pins upper-constraints to the same branch.
+        #
+        # -f turns off dib's tmpfs build: it wants several GB of RAM and this VM is
+        # already running Ceph, Kolla and their guests. -t raw because Glance sits
+        # on RBD, where Nova copy-on-write clones a raw image and converts a qcow2
+        # one on every single boot.
+        ( cd "$src/diskimage-create" && PATH="$dib/bin:$PATH" \
+            ./diskimage-create.sh -a arm64 -i ubuntu-minimal -t raw -s 2 -f \
+                -g "$KOLLA_BRANCH" \
+                -w "$work" -o "$work/amphora-arm64-haproxy" ) >>"$build_log" 2>&1 \
+            || die "amphora image build failed -- see $build_log"
+    fi
+    [ -f "$img" ] || die "amphora build finished but $img is missing -- see $build_log"
+    info "amphora image: $(du -h "$img" | cut -f1)"
+
+    # amp_image_owner_id defaults to the service project, and amp_image_tag to
+    # 'amphora'. An image uploaded into admin instead is invisible to Octavia, and
+    # the only symptom is a load balancer that sits in PENDING_CREATE until it
+    # times out. hw_firmware_type=uefi for the same reason lab-workload needs it:
+    # aarch64 has no BIOS, so without it the amphora never reaches a bootloader.
+    if ! oscli image show amphora >/dev/null 2>&1; then
+        oscli image create amphora \
+            --disk-format raw --container-format bare \
+            --project service --tag amphora \
+            --property hw_firmware_type=uefi \
+            --file "$img" >/dev/null || die "amphora image upload failed"
+        info "amphora image uploaded to glance, owned by the service project"
+    fi
+
+    wait_for 180 "octavia api answering" bash -c \
+        "timeout 5 bash -c '</dev/tcp/$KOLLA_VIP/9876'" \
+        || die "octavia-api is not listening -- docker logs octavia_api"
+
+    # Third missing CLI plugin, after heat and barbican: Kolla's venv has no
+    # octaviaclient, so 'openstack loadbalancer ...' is not an openstack command at
+    # all and the CLI answers with a list of 'container ...' suggestions, which
+    # reads like the load balancer is broken rather than the client being absent.
+    sudo -u kolla bash -lc \
+        '. /opt/kolla/venv/bin/activate && python -c "import octaviaclient" 2>/dev/null' || \
+    sudo -u kolla bash -lc \
+        '. /opt/kolla/venv/bin/activate && pip -q install python-octaviaclient' \
+        || die "could not install python-octaviaclient"
+
+    oscli loadbalancer provider list | sed 's/^/    /' | tee -a "$LOG"
+
+    # is_public is false on the amphora flavor, so it only shows with --all -- worth
+    # printing, because "the flavor is missing" is the first wrong guess when a load
+    # balancer will not build.
+    oscli flavor list --all -f value -c Name -c RAM -c VCPUs | grep -i amphora \
+        | sed 's/^/    amphora flavor: /' | tee -a "$LOG"
+}
+
 phase_90_verify() {
     os() {
         sudo -u kolla bash -lc \
