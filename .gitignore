@@ -1,0 +1,17 @@
+# Build outputs — regenerate with 01-build-kernel.sh
+vmlinux-arm64
+
+# Build scratch and caches (01/02 clean these up themselves, but not on failure)
+.build/
+.cache/
+
+# Tooling state
+.omc/
+.playwright-mcp/
+.claude/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
