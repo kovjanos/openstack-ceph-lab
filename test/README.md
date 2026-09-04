@@ -92,40 +92,52 @@ the build guide and the exercise guide comes from this table.
 ```
 step                          start     dur    host store   VM img alloc    VM fs used    ceph used/alloc  peak footprint  peak rss  peak guest/26G
 -------------------------------------------------------------------------------------------------------------------------------------
-1/5 teardown               19:01:42    0m00s   5.4->5.4       0.0->0.0      0.0->0.0        0.0->0.0  /0               0.0       0.0            0.0
-2/5 kernel                 19:02:12   11m02s   5.4->9.2       0.0->0.0      0.0->0.0        0.0->0.0  /0               4.5       7.1            0.0
-3/5 image                  19:13:44   20m34s   9.2->8.9       0.0->0.0      0.0->1.9        0.0->0.0  /0               2.2       4.1            0.5
-4/5 provision              19:34:48   32m38s   8.9->34.9      3.2->26.0     3.0->27.9       0.0->2.7  /15             26.0      37.7           13.9
-Ex2 build the lab image    20:07:56    0m00s  34.9->34.9     26.1->26.1    27.9->27.9       2.7->2.7  /15             26.0      25.5           13.9
-Ex3 a first workload       20:08:26    1m00s  34.9->33.3     27.6->27.7    28.6->28.6       3.3->3.3  /15             26.0      26.5           14.8
-Ex5 snapshot and restore   20:09:56    0m30s  33.3->33.3     27.7->27.7    28.6->28.2       3.3->2.9  /15             26.0      26.7           14.8
-Ex6 grow a volume          20:10:56    0m00s  33.3->33.3     27.7->27.7    28.2->28.2       2.9->2.9  /15             26.0      17.3           14.4
-Ex7 network isolation      20:11:27    1m31s  33.3->34.0     27.7->28.4    29.1->29.1       3.7->3.8  /15             26.0      19.9           15.4
-Ex8 floating IP failover   20:13:28    0m00s  34.0->34.0     28.4->28.4    28.3->28.3       3.0->3.0  /15             26.0      19.2           14.8
-Ex9 one address, two serv  20:13:58    5m01s  34.0->40.9     28.1->35.4    28.3->36.0       3.0->8.2  /15             26.0      26.3           18.4
-Ex10 sticky sessions       20:19:29    0m30s  41.0->41.0     35.4->35.4    34.3->34.3       8.2->8.2  /15             26.0      23.8           17.7
-Ex11 the load balancer di  20:20:29    5m02s  41.0->43.0     35.4->37.5    35.2->31.3       6.2->5.6  /15             26.0      24.6           18.7
-Ex12 shared filesystem ov  20:26:01    0m30s  43.0->43.0     31.1->31.1    32.2->32.2       4.5->4.5  /15             26.0      25.6           17.4
-Ex14 encryption at rest    20:27:01    0m30s  36.7->36.7     31.1->31.2    32.3->32.3       4.5->4.5  /15             26.0      26.5           17.6
-Ex15 Heat                  20:28:01    1m00s  36.7->36.7     31.7->31.7    32.6->32.2       4.9->4.6  /15             26.0      26.3           17.8
-Ex16 quotas                20:29:32    0m00s  36.7->36.7     31.2->31.2    32.2->32.2       4.6->4.6  /15             26.0      26.3           17.7
-Ex18 RADOS: a volume is o  20:30:02    0m30s  36.7->36.7     31.2->31.2    32.2->32.2       4.5->4.5  /15             26.0      26.5           17.5
-Ex21 extend the cluster w  20:31:02    1m30s  36.7->40.0     31.2->35.2    33.3->34.4       4.2->4.2  /20             26.0      26.3           17.8
-Ex22 lose the added disk   20:33:02    0m00s  40.0->40.0     35.6->35.6    34.5->34.5       4.2->4.2  /15             26.0      24.6           17.8
-Ex23 replace the added di  20:33:32    0m00s  40.0->40.0     36.1->36.1    34.5->34.5       4.2->4.2  /15             26.0      24.6           17.8
-Ex25 replication cost: 2   20:34:02    0m00s  40.0->40.0     36.6->36.6    35.2->35.2       4.2->4.2  /15             26.0      24.4           17.5
-Ex28 decommission the add  20:34:33    0m30s  42.2->42.2     36.6->37.0    35.2->34.9       4.2->5.9  /15             26.0      24.5           17.6
-Ex29 lower the ratios so   20:35:33    0m00s  42.2->42.2     31.0->31.0    34.9->34.9       5.9->5.9  /15             26.0      24.2           17.6
-Ex29 fill the cluster      20:36:03    3m00s  42.2->44.4     36.6->39.1    39.8->40.1      11.0->11.0 /15             26.0      24.9           17.6
-Ex29 the deadlock -- dele  20:39:34    1m00s  44.7->44.7     39.1->39.1    40.1->33.3      11.0->4.3  /15             26.0      25.0           17.6
-Ex29 the way out -- raise  20:41:04    0m00s  44.7->44.7     39.2->39.2    33.3->33.3       4.3->4.3  /15             26.0      25.0           17.6
+1/5 teardown               19:01:42   0m30s~   5.4->5.4       0.0->0.0      0.0->0.0        0.0->0.0  /0               1.0       1.6            0.0
+2/5 kernel                 19:02:12  11m32s    5.4->9.2       0.0->0.0      0.0->0.0        0.0->0.0  /0               4.5       7.1            0.0
+3/5 image                  19:13:44  21m04s    9.2->8.9       0.0->0.0      0.0->1.9        0.0->0.0  /0               2.2       4.1            0.5
+4/5 provision              19:34:48  33m08s    8.9->34.9      3.2->26.0     3.0->27.9       0.0->2.7  /15             26.0      37.7           13.9
+Ex1 bootstrap the tenant   20:07:26   0m18s~  34.9->34.9     26.0->26.1    27.9->27.9       2.7->2.7  /15             26.0      25.5           13.9
+Ex2 build the lab image    20:07:26   0m15s~  34.9->34.9     26.0->27.6    27.9->28.6       2.7->3.3  /15             26.0      25.9           14.5
+Ex3 a first workload       20:08:26   1m28s   34.9->33.3     27.6->27.7    28.6->28.6       3.3->3.3  /15             26.0      26.5           14.8
+Ex4 persistent storage     20:09:26   0m16s~  33.3->33.3     27.7->27.7    28.6->28.6       3.3->3.3  /15             26.0      26.7           14.8
+Ex5 snapshot and restore   20:09:56   0m39s   33.3->33.3     27.7->27.7    28.6->28.2       3.3->2.9  /15             26.0      26.7           14.8
+Ex6 grow a volume          20:10:26   0m47s~  33.3->33.3     27.7->27.7    28.2->29.1       2.9->3.7  /15             26.0      26.7           15.3
+Ex7 network isolation      20:11:27   2m09s   33.3->34.0     27.7->28.4    29.1->29.1       3.7->3.8  /15             26.0      19.9           15.4
+Ex8 floating IP failover   20:12:58   0m24s~  34.0->34.0     28.4->28.1    29.1->28.3       3.8->3.0  /15             26.0      19.4           15.4
+Ex9 one address, two serv  20:13:58   5m41s   34.0->40.9     28.1->35.4    28.3->36.0       3.0->8.2  /15             26.0      26.3           18.4
+Ex10 sticky sessions       20:19:29   0m52s   41.0->41.0     35.4->35.4    34.3->34.3       8.2->8.2  /15             26.0      23.8           17.7
+Ex11 the load balancer di  20:20:29   5m22s   41.0->43.0     35.4->37.5    35.2->31.3       6.2->5.6  /15             26.0      24.6           18.7
+Ex12 shared filesystem ov  20:26:01   1m18s   43.0->43.0     31.1->31.1    32.2->32.2       4.5->4.5  /15             26.0      25.6           17.4
+Ex13 object storage        20:26:31   0m00s~  43.0->36.7     31.1->31.1    32.2->32.3       4.5->4.5  /15             26.0      26.2           17.6
+Ex14 encryption at rest    20:27:01   0m47s   36.7->36.7     31.1->31.2    32.3->32.3       4.5->4.5  /15             26.0      26.5           17.6
+Ex15 Heat                  20:28:01   1m39s   36.7->36.7     31.7->31.7    32.6->32.2       4.9->4.6  /15             26.0      26.3           17.8
+Ex16 quotas                20:29:01   0m07s~  36.7->36.7     31.7->31.2    32.2->32.2       4.6->4.5  /15             26.0      26.5           17.7
+Ex17 a second tenant       20:29:32   0m08s~  36.7->36.7     31.2->31.2    32.2->32.2       4.6->4.5  /15             26.0      26.5           17.7
+Ex18 RADOS: pools and a h  20:29:32   0m03s~  36.7->36.7     31.2->31.2    32.2->32.2       4.6->4.5  /15             26.0      26.5           17.7
+Ex18 RADOS: a volume is o  20:30:02   1m08s   36.7->36.7     31.2->31.2    32.2->32.2       4.5->4.5  /15             26.0      26.5           17.5
+Ex19 maintenance mode      20:30:32   0m09s~  36.7->36.7     31.2->31.2    32.2->33.3       4.5->4.2  /15             26.0      26.4           17.5
+Ex20 restricted Ceph user  20:30:32   0m01s~  36.7->36.7     31.2->31.2    32.2->33.3       4.5->4.2  /15             26.0      26.4           17.5
+Ex21 extend the cluster w  20:31:02   1m41s   36.7->40.0     31.2->35.2    33.3->34.4       4.2->4.2  /20             26.0      26.3           17.8
+Ex22 lose the added disk   20:32:32   0m27s~  40.0->40.0     35.2->36.1    34.4->34.5       4.2->4.2  /15             26.0      25.8           17.8
+Ex23 replace the added di  20:33:02   0m36s~  40.0->40.0     35.6->36.6    34.5->35.2       4.2->4.2  /15             26.0      24.6           17.8
+Ex24 CephFS snapshots      20:33:32   0m09s~  40.0->40.0     36.1->36.6    34.5->35.2       4.2->4.2  /15             26.0      24.6           17.8
+Ex25 replication cost: 2   20:33:32   0m37s~  40.0->42.2     36.1->36.6    34.5->35.2       4.2->4.2  /15             26.0      24.6           17.8
+Ex26 verify the data       20:34:02   0m01s~  40.0->42.2     36.6->36.6    35.2->35.2       4.2->4.2  /15             26.0      24.4           17.5
+Ex27 the monitoring you a  20:34:02   0m00s~  40.0->42.2     36.6->36.6    35.2->35.2       4.2->4.2  /15             26.0      24.4           17.5
+Ex28 decommission the add  20:34:33   0m53s   42.2->42.2     36.6->37.0    35.2->34.9       4.2->5.9  /15             26.0      24.5           17.6
+Ex29 lower the ratios so   20:35:03   0m10s~  42.2->42.2     37.0->36.6    34.9->39.8       5.9->11.0 /15             26.0      24.6           17.6
+Ex29 fill the cluster      20:36:03   3m46s   42.2->44.4     36.6->39.1    39.8->40.1      11.0->11.0 /15             26.0      24.9           17.6
+Ex29 the deadlock -- dele  20:39:34   1m13s   44.7->44.7     39.1->39.1    40.1->33.3      11.0->4.3  /15             26.0      25.0           17.6
+Ex29 the way out -- raise  20:40:34   0m30s~  44.7->44.7     39.1->39.2    33.3->33.3       4.3->4.3  /15             26.0      25.0           17.6
 -------------------------------------------------------------------------------------------------------------------------------------
 PEAK / TOTAL               19:01:42   99m22s         44.7          39.2         40.1            11.0           26.0      37.7           18.7
 
   all figures GB.  host store = what macOS allocated.  VM img alloc = rootfs.ext4 real blocks.
   VM fs used = df inside the guest.  ceph used/alloc = raw used vs raw capacity.
   peak footprint = macOS phys_footprint (Activity Monitor).  peak rss = ps RSS.
-  peak guest/26G = memory in use inside the VM, against its 26 GB allocation.
+  ~ on the duration = shorter than the 30s sampling interval, so the disk and memory
+    columns bracket the step from the samples either side instead of measuring inside it.
+  peak guest/26G = memory in use inside the VM, against its 26G allocation.
 ```
 
 Reading it:
@@ -142,5 +154,7 @@ Reading it:
   which is why the two memory columns answer different questions. The footprint is what
   a user must have free; `peak guest/26G` is what tells you whether 26 GB is the right
   number to ask for.
-- **Steps showing `0m00s`** were shorter than the 30s sampling interval. They still
-  bracket correctly, but their growth is attributed to the neighbouring step.
+- **A `~` after the duration** means the step was shorter than the 30s sampling
+  interval, so its disk and memory columns come from the samples either side rather than
+  from inside it. The duration itself is exact — it comes from the markers the exercise
+  scripts emit, not from the samples.

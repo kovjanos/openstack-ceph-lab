@@ -61,11 +61,28 @@ for r in host:
         cur, start = st, int(r["epoch"])
 steps.append((cur, start, int(host[-1]["epoch"])+1))
 steps = [s for s in steps if not ("5/6" in s[0] or "5/5" in s[0])]   # split by exercise
+# The last exercise ends when stage 5 does. Without this it would absorb every
+# sample from the restart stage and report an hour-long Ex29.
+def stage5_end(after):
+    for r in host:
+        if int(r["epoch"]) > after and "5/" not in r["stage"]: return int(r["epoch"])
+    return int(host[-1]["epoch"])+1
 for i, (ep, lab) in enumerate(marks):
-    end = marks[i+1][0] if i+1 < len(marks) else int(host[-1]["epoch"])+1
+    end = marks[i+1][0] if i+1 < len(marks) else stage5_end(ep)
     steps.append((lab, ep, end))
 
-def rows_in(a, b): return [r for r in host if a <= int(r["epoch"]) < b]
+hep = [int(r["epoch"]) for r in host]
+def rows_in(a, b):
+    """Samples inside [a,b). A step shorter than the 30s sampling interval can hold
+    one sample or none, so fall back to the samples either side of it: the row is
+    then a bracket around the step rather than a measurement of it, flagged with ~.
+    Dropping these silently lost nine of the 29 exercises from the table."""
+    inside = [r for r in host if a <= int(r["epoch"]) < b]
+    if len(inside) > 1: return inside, ""
+    j = bisect.bisect_left(hep, a)
+    lo = host[max(0, j-1)]
+    hi = host[min(len(host)-1, bisect.bisect_left(hep, b))]
+    return ([lo, hi] if int(lo["epoch"]) <= int(hi["epoch"]) else [lo]), "~"
 def gb(v):
     try: return float(v)/1024
     except (TypeError, ValueError): return 0.0
@@ -74,7 +91,7 @@ print(f"{'step':<26}{'start':>9}{'dur':>8}{'host store':>14}{'VM img alloc':>15}
       f"{'ceph used/alloc':>19}{'peak footprint':>16}{'peak rss':>10}{('peak guest/'+MEM):>16}")
 print("-"*133)
 for lab, a, b in steps:
-    rs = rows_in(a, b)
+    rs, approx = rows_in(a, b)
     if not rs: continue
     s, e = rs[0], rs[-1]
     ceph_s, ceph_e = L(int(s["epoch"]), "ceph_raw_used_mb"), L(int(e["epoch"]), "ceph_raw_used_mb")
@@ -85,8 +102,8 @@ for lab, a, b in steps:
     pk_gm  = max(L(int(r["epoch"]), "guest_mem_used_mb") for r in rs)/1024
     name = lab.replace("STAGE ","")
     name = re.sub(r' \(3x\d+G OSDs, pool size \d\)', '', name)[:25]
-    dur = int(rs[-1]["epoch"]) - int(rs[0]["epoch"])
-    print(f"{name:<26}{rs[0]['ts']:>9}{dur//60:>5}m{dur%60:02d}s"
+    dur = b - a
+    print(f"{name:<26}{rs[0]['ts']:>9}{dur//60:>4}m{dur%60:02d}s{approx:<1}"
           f"{gb(s['store_mb']):6.1f}->{gb(e['store_mb']):<6.1f}"
           f"{gb(s['rootfs_mb']):7.1f}->{gb(e['rootfs_mb']):<6.1f}"
           f"{vmfs_s/1024:6.1f}->{vmfs_e/1024:<6.1f}"
@@ -104,4 +121,6 @@ print(f"{'PEAK / TOTAL':<26}{host[0]['ts']:>9}{total//60:>5}m{total%60:02d}s{max
 print("\n  all figures GB.  host store = what macOS allocated.  VM img alloc = rootfs.ext4 real blocks.")
 print("  VM fs used = df inside the guest.  ceph used/alloc = raw used vs raw capacity.")
 print("  peak footprint = macOS phys_footprint (Activity Monitor).  peak rss = ps RSS.")
+print("  ~ on the duration = shorter than the 30s sampling interval, so the disk and memory")
+print("    columns bracket the step from the samples either side instead of measuring inside it.")
 print(f"  peak guest/{MEM} = memory in use inside the VM, against its {MEM} allocation.")
