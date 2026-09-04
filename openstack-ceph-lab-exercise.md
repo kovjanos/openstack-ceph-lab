@@ -2614,13 +2614,37 @@ long outage into a five-minute one.
 
 > Do this exercise last. It disrupts everything else, and its cleanup is the teardown.
 
-> **Do not shrink the OSDs to make this quicker.** The lab's disk size is set by this
-> exercise, not by the other twenty-eight. Filling a small OSD does not just fill it: at
-> about 93% a 5 GB OSD has ~250 MB left, which is too little for RocksDB to compact, and
-> BlueFS aborts with `bluefs enospc`. The OSD then cannot restart, because recovery
-> needs to write too. Measured on this lab — the cluster lost a disk permanently and
-> `full_ratio` at 0.95 did not prevent it, because BlueFS starves before the data area
-> does.
+### First, lower the limits
+
+A full cluster is dangerous to a *small* cluster in a way it is not to a real one, and
+this is worth understanding before you fill anything.
+
+An OSD is not only a data area. BlueStore keeps its metadata in RocksDB, on a filesystem
+called BlueFS that shares the same disk, and RocksDB needs free space to compact. On a
+production OSD of a terabyte, the 5% that `full_ratio = 0.95` holds back is tens of
+gigabytes and RocksDB never notices. On the 5 GB disks here, 5% is about 340 MB — and
+that is not enough.
+
+Measured on this lab at the default ratio: BlueFS aborted with `ceph_abort_msg("bluefs
+enospc")`, the OSD would not restart because recovery has to write too, and the cluster
+lost a disk permanently. `full_ratio` did not protect it, because BlueFS starves before
+the data area is full.
+
+So stop the writes earlier. Ceph enforces `nearfull < backfillfull < full`, so all three
+move together:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph osd set-nearfull-ratio     0.70
+incus exec ceph-node1 -- cephadm shell -- ceph osd set-backfillfull-ratio 0.75
+incus exec ceph-node1 -- cephadm shell -- ceph osd set-full-ratio         0.80
+```
+
+At 0.80 each OSD still has about 1 GB when writes stop — three times the headroom that
+failed — and the cluster is every bit as full from the client's point of view. Everything
+below behaves the same; only the number changes.
+
+**This is the real lesson, not a workaround.** `full_ratio` is a safety limit you own,
+and its right value depends on how big your OSDs are. The default assumes they are large.
 
 ### Fill it up
 
@@ -2714,11 +2738,15 @@ Deletion is asynchronous — give it a minute before judging progress. Then **pu
 safety limits back**:
 
 ```bash
-incus exec ceph-node1 -- cephadm shell -- ceph osd set-full-ratio 0.95
-incus exec ceph-node1 -- cephadm shell -- ceph osd set-nearfull-ratio 0.85
+incus exec ceph-node1 -- cephadm shell -- ceph osd set-full-ratio         0.95
 incus exec ceph-node1 -- cephadm shell -- ceph osd set-backfillfull-ratio 0.90
+incus exec ceph-node1 -- cephadm shell -- ceph osd set-nearfull-ratio     0.85
 incus exec ceph-node1 -- cephadm shell -- ceph df
 ```
+
+That restores Ceph's defaults rather than the 0.80 you set above — the lab is finished
+with the fill, and leaving a non-default limit behind is the kind of thing that confuses
+the next person to look at the cluster.
 
 ```
 TOTAL  45 GiB  43 GiB avail  1.7 GiB used  3.82%

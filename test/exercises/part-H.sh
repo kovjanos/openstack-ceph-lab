@@ -10,6 +10,19 @@ step() { printf '\n--- [%s|%s] %s\n' "$(date '+%H:%M:%S')" "$(date +%s)" "$*"; }
 pct() { C ceph df | awk '/TOTAL/{print $NF}'; }
 imgs() { du -ch /var/lib/ceph-disks/*.img 2>/dev/null | tail -1 | cut -f1; }
 
+step "Ex29 lower the ratios so a full cluster does not kill an OSD"
+# Ceph enforces nearfull < backfillfull < full, so all three move together.
+# At the default 0.95 a 5G OSD has ~340 MB left when writes stop, which is not enough
+# for RocksDB to compact: BlueFS aborts with "bluefs enospc" and the OSD will not
+# restart. At 0.80 it has ~1 GB, and the cluster is still genuinely full.
+C ceph osd set-nearfull-ratio     0.70 2>&1 | tail -1 | sed 's/^/    /'
+C ceph osd set-backfillfull-ratio 0.75 2>&1 | tail -1 | sed 's/^/    /'
+C ceph osd set-full-ratio         0.80 2>&1 | tail -1 | sed 's/^/    /'
+sleep 5
+C ceph osd dump 2>/dev/null | grep -E "full_ratio" | sed 's/^/    /'
+r=$(C ceph osd dump 2>/dev/null | awk '/^full_ratio/{print $2}')
+[ "$r" = "0.8" ] && pass "full_ratio lowered to 0.80 before filling" || fail "full_ratio is '$r', expected 0.8"
+
 step "Ex29 fill the cluster"
 echo "  starting at $(pct)% raw used"
 cd /tmp
@@ -22,7 +35,7 @@ for n in $(seq 1 24); do
   # A 1 GB image costs 2 GiB raw at size 2. Near the top that no longer fits, and the
   # upload fails silently leaving the cluster stuck below full_ratio. Drop to 250 MB
   # once past 85% so the last few percent can actually be walked.
-  if echo "$cur" | awk '{exit !($1+0 >= 85)}'; then
+  if echo "$cur" | awk '{exit !($1+0 >= 72)}'; then
     [ -f /tmp/small.raw ] || dd if=/dev/urandom of=/tmp/small.raw bs=1M count=250 status=none
     src=/tmp/small.raw; sz=250M
   else
@@ -32,7 +45,7 @@ for n in $(seq 1 24); do
   OS image create big-image-$n --file "$src" --disk-format raw \
      --container-format bare >/dev/null 2>&1
   p=$(pct)
-  echo "$p" | awk '{exit !($1+0 >= 96)}' && { echo "  cluster at $p% -- stopping"; break; }
+  echo "$p" | awk '{exit !($1+0 >= 81)}' && { echo "  cluster at $p% -- stopping"; break; }
   # once the cluster stops accepting writes the uploads fail silently and the
   # percentage stops moving; two flat readings mean full, not slow
   if [ "$p" = "${last:-}" ]; then
@@ -80,7 +93,9 @@ for i in $(seq 1 30); do
   sleep 10
 done
 echo "  after deleting: $(pct)% raw used"
-C ceph osd set-full-ratio 0.95 2>&1 | sed 's/^/    /'
+C ceph osd set-full-ratio         0.95 2>&1 | tail -1 | sed 's/^/    /'
+C ceph osd set-backfillfull-ratio 0.90 2>&1 | tail -1 | sed 's/^/    /'
+C ceph osd set-nearfull-ratio     0.85 2>&1 | tail -1 | sed 's/^/    /'
 sleep 15
 for i in $(seq 1 40); do C ceph health | grep -q HEALTH_OK && break; sleep 10; done
 C ceph health | head -1 | sed 's/^/    /'
