@@ -2922,7 +2922,7 @@ The same cause shows up as a hang rather than an error: a stop after a full exer
 printed progress for the full five minutes and only ended when the VM process was
 killed. One guest was still running.
 
-**`lab-down` is the fix**, and it is in the image:
+**`lab-down` is in the image** and brings the lab down in order:
 
 ```bash
 container machine run -n openstack-lab --root -- lab-down
@@ -2931,13 +2931,34 @@ container machine stop openstack-lab
 
 It shuts the guests down through libvirt rather than the OpenStack API — so it works
 when the control plane is unhealthy — giving them two minutes of ACPI before
-`virsh destroy`, then stops the Incus containers, which hold the passed-through loop and
-dm devices and run every Ceph daemon. Then it syncs and trims. Every step is bounded;
-a shutdown helper that can itself hang is worse than none.
+`virsh destroy`, then stops the Incus containers, then syncs and trims. Every step is
+bounded. It leaves the `hold-osd*` units and the volume groups alone: those are what
+`ceph-lab-assemble` reassembles at boot.
 
-It does not touch the `hold-osd*` units or the volume groups. Those are what
-`ceph-lab-assemble` reassembles at boot, and the restart path is verified as it
-stands.
+**It does not, on its own, make the stop reliable.** Measured:
+
+| Stop | Guests | Incus containers | `fstrim` first | Result |
+|---|---|---|---|---|
+| after `lab-down` | none — one destroyed 5 min earlier | none | yes | **hung 5 min** |
+| plain, on a boot that never ran a guest | none, ever | 3 running | no | **returned in 15s** |
+
+Three Incus containers running did not delay it at all, so the passed-through loop and
+dm devices are not the block, and the trim is not either. What separates the two rows is
+whether a guest ran at any point during that boot.
+
+The lab workload is Alpine with no `acpid`, so nothing in it listens for the ACPI power
+button — `lab-down` logs `ignored ACPI after 2 min, destroying it` and falls through to
+`virsh destroy`. A hard-killed QEMU scope is what the host then fails to reap, which is
+the same `cgroup.kill` failure as the 12-second error above, only presenting as a hang.
+**Adding `acpid` to the workload image so guests shut down when asked is the obvious next
+thing to try. It has not been tested.**
+
+Until it is, the reliable sequence is the bounded one in `test/run-e2e.sh`: stop with a
+timeout, kill the VM process if it overruns, then **issue a second stop** to reconcile
+the runtime state. Without that second stop `container machine ls` still reports the
+machine as running and `container machine run` fails instantly with
+`cannot exec: container is not running`. A second stop has returned immediately every
+time it has been needed.
 
 There is no `container machine start`; the subcommand is `container machine run`.
 
@@ -3081,8 +3102,8 @@ are too small to survive being filled.
 
 Memory, measured the same way: the VM's `phys_footprint` sits at its full 26 GB
 allocation, but **peak use inside the guest was 18.7 GB**, during the load-balancer
-exercises. 26 GB is right-sized rather than generous. Nothing was measured at 24 GB,
-but the same peak would leave it about 5 GB clear.
+exercises. 26 GB is right-sized rather than generous. A 24 GB machine has since been run
+end to end as well: all 29 exercises passed, peaking at 18.8 GB with 4.8 GB available.
 
 ### The disk never shrinks by itself
 

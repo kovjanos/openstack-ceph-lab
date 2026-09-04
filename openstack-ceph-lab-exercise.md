@@ -155,14 +155,14 @@ re-run `lab-expose` rather than expecting it to stick.
 The exercises are sized for a **26 GB machine**, which is the default in
 `02-build-image.sh`. Measured across a full run, the most the VM ever used was
 **18.7 GB**, during exercises 9-11 with the load balancer and both amphorae running —
-so 26 GB is right-sized rather than generous, and 24 GB would still have room. Ceph gives roughly
+so 26 GB is right-sized rather than generous, and 24 GB has been run end to end. Ceph gives roughly
 **7 GiB usable** from 15 GiB raw at `size = 2`.
 
 | | |
 |---|---|
 | Lab guest | 512 MB RAM, 248 MB image — every workload exercise uses the same one |
 | Concurrent guests | 3-4 on a 26 GB machine, more on 28-32 GB |
-| 24 GB machine | Untested — every recorded run used 26 GB — but the measured 18.7 GB peak would leave it about 5 GB of headroom, load balancer included |
+| 24 GB machine | Verified: all 29 exercises pass, peak 18.8 GB with 4.8 GB available, load balancer included |
 
 **512 MB is a hard floor for any guest.** Below it, aarch64 UEFI GRUB fails with
 `error: out of memory` before Linux starts, and the console's next line —
@@ -202,9 +202,9 @@ peak inside the VM across a full run was **18.7 GB**, reached during Part D with
 amphorae up.
 
 `02-build-image.sh` defaults to **26 GB**, which leaves about 7 GB clear of that peak.
-Nothing here was measured at 24 GB, but the same peak would leave it roughly 5 GB, so
-the load balancer is not the reason for the default. The extra 2 GB buys tolerance for a
-slow amphora boot or a rebuild that briefly runs three of them.
+A 24 GB machine has been run end to end: all 29 exercises passed, peaking at 18.8 GB
+with 4.8 GB available. The extra 2 GB buys tolerance for a slow amphora boot or a rebuild
+that briefly runs three of them, not headroom the exercises need.
 
 **If you would rather not run Octavia**, build with `ENABLE_NETWORK_LOADBALANCER=no`,
 which frees the 1.4 GB its four containers hold permanently. Everything except exercises
@@ -2817,18 +2817,20 @@ Keep `lab-workload`, the networks, the router, the flavors, the keypair and the
 security groups — they are Exercises 1 and 2, and rebuilding them wastes ten minutes
 every time.
 
-Then stop the machine cleanly. Run `lab-down` inside it first — it shuts the Nova
-guests down through libvirt and stops the Incus containers, which is what lets the stop
-finish quickly:
+Then stop the machine. Run `lab-down` inside it first — it shuts the Nova guests down
+through libvirt and stops the Incus containers, so the machine is idle before it goes
+down:
 
 ```bash
 container machine run -n openstack-lab --root -- lab-down
 container machine stop openstack-lab
 ```
 
-Skipping `lab-down` is not fatal, but a stop with a guest still running either errors
-after 12 seconds or sits printing progress for minutes — see *Stop can fail with
-instances running* in `openstack-ceph-lab-build.md`.
+A stop can still stall for minutes once a guest has run during that boot — the Alpine
+image ignores ACPI, so the guest gets hard-killed and the host struggles to reap it. If
+the stop is still printing progress after a few minutes, interrupt it and run it again:
+the second one returns immediately. See *Stop can fail with instances running* in
+`openstack-ceph-lab-build.md`.
 
 To start again later:
 

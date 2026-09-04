@@ -92,7 +92,7 @@ want to open a workload in your own browser.
 | Hardware | Apple Silicon M3 or later |
 | macOS | 26 |
 | Tooling | Apple [`container`](https://github.com/apple/container) CLI 1.3.1+ |
-| Memory | 26 GB by default, and measured only at that size: peak use inside the VM was 18.7 GB, with the load balancer running. That peak would leave 24 GB about 5 GB of headroom. 32 GB if your Mac has 48 |
+| Memory | 26 GB by default. **24 GB is enough** — a full 29-exercise run on a 24 GB machine peaked at 18.8 GB with 4.8 GB still available, load balancer included. 32 GB if your Mac has 48 |
 | Disk | ~50 GB free. Measured peak 44.7 GB across a full run of all 29 exercises |
 | Time | 1h40m end to end on a clean run: 11 min kernel, 21 min image, 33 min provision, 34 min exercises. The build stages track how fast `ports.ubuntu.com` is on the day |
 
@@ -119,10 +119,11 @@ where `neutron_server` alone is 0.9 GB — and the two amphorae cost 2 GB more, 
 while exercises 9–11 are running.
 
 **That cost is measured, and it is not what forces 26 GB.** Across a full run the most
-the VM ever used was 18.7 GB, during exercises 9-11 with both amphorae up. Every
-recorded run used a 26 GB machine, so 24 is untested — but the same peak would leave it
-roughly 5 GB of headroom, which is not a marginal figure. The default is 26 because
-spare memory absorbs a slow amphora boot or a rebuild that briefly runs three.
+the VM ever used was 18.7 GB on a 26 GB machine, during exercises 9-11 with both
+amphorae up. The same run on a **24 GB machine peaked at 18.8 GB with 4.8 GB still
+available** and all 29 exercises passing, so the lab wants the same memory either way.
+The default is 26 because spare memory absorbs a slow amphora boot or a rebuild that
+briefly runs three, not because 24 falls short.
 
 **If you would rather not run Octavia at all**, build without it:
 

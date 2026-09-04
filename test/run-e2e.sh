@@ -149,6 +149,10 @@ if kill -0 $sp 2>/dev/null; then
     [ -n "$vm" ] && kill -9 "$vm" 2>/dev/null
     sleep 8
     rfail "stop did not return within 5 min -- killed the VM process"
+    # The runtime still reports the machine as running and the restart below would
+    # fail in 0s with "container is not running". A second stop reconciles it.
+    container machine stop "$MACHINE" >>"$LOG" 2>&1 || true
+    note "issued a second stop to reconcile the runtime state"
 else
     wait $sp; src=$?
     secs=$(( $(date +%s) - t0 ))
@@ -175,15 +179,19 @@ note "restart + 90-verify rc=$vrc in $(( $(date +%s) - t0 ))s"
 # 90-verify does not exit non-zero for a sick service; it prints these instead.
 patt='GAVE UP|NOT healthy|NOT up|NOT answering|still no hypervisor'
 bad=$(grep -cE "$patt" "$OUT/restart-verify.out" 2>/dev/null)
-if [ "${bad:-0}" = 0 ]; then
+if ! grep -q '90-verify complete' "$OUT/restart-verify.out" 2>/dev/null; then
+    # An empty or truncated file has no failure text in it either. Demand the
+    # phase's own completion line before reading silence as success.
+    rfail "90-verify did not run to completion -- $(wc -l < "$OUT/restart-verify.out" 2>/dev/null || echo 0) lines of output"
+elif [ "${bad:-0}" = 0 ]; then
     rpass "no service reported a problem after restart"
 else
     rfail "$bad service problem(s) after restart"
     grep -E "$patt" "$OUT/restart-verify.out" | sed 's/^/      /' | tee -a "$LOG"
 fi
 
-h=$(container machine run -n "$MACHINE" --root -- \
-      bash -lc "incus exec ceph-node1 -- cephadm shell -- ceph health 2>/dev/null" 2>/dev/null \
+h=$(printf '%s\n' 'incus exec ceph-node1 -- cephadm shell -- ceph health 2>/dev/null' \
+      | container machine run -n "$MACHINE" -i --root -- bash -s 2>/dev/null \
       | tr -d '\r' | grep -E 'HEALTH_' | head -1)
 note "ceph after restart: ${h:-<no answer>}"
 case "$h" in HEALTH_OK*) rpass "Ceph HEALTH_OK after restart";;
