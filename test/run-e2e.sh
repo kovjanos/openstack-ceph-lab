@@ -39,6 +39,18 @@ note "metrics collectors started"
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
   if [ "${SKIP_TEARDOWN:-0}" != 1 ]; then
     stage "STAGE 1/5 teardown"
+    # Release the guests and the Incus containers first. A running Nova instance is
+    # a nested QEMU scope the host cannot kill, and it is what makes the stop stall.
+    # Bounded, and tolerant of a machine built before lab-down existed.
+    if container machine ls 2>/dev/null | awk -v m="$MACHINE" '$1==m{print $7}' | grep -q running; then
+        ld=$(mktemp); ( container machine run -n "$MACHINE" --root -- \
+                /usr/local/sbin/lab-down.sh >"$ld" 2>&1 ) &
+        lp=$!
+        for i in $(seq 1 48); do kill -0 $lp 2>/dev/null || break; sleep 5; done
+        kill -0 $lp 2>/dev/null && { note "lab-down exceeded 4 min -- going ahead"; kill -9 $lp 2>/dev/null; }
+        cat "$ld" >>"$LOG" 2>/dev/null; rm -f "$ld"
+        note "lab-down: $(grep -c '^lab-down:' "$LOG" 2>/dev/null || echo 0) steps logged"
+    fi
     # bounded: an unbounded stop once hung for over seven hours while still printing
     container machine stop "$MACHINE" >>"$LOG" 2>&1 &
     sp=$!

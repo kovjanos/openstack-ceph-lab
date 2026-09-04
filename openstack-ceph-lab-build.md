@@ -2918,7 +2918,26 @@ Running `container machine stop` a second time succeeded immediately, and
 trivial once you know it — but if you take the first `ls` at face value you will spend
 the next ten minutes debugging a machine that is not running.
 
-Shut the instances down first (`openstack server stop <name>`) if you want a clean stop.
+The same cause shows up as a hang rather than an error: a stop after a full exercise run
+printed progress for the full five minutes and only ended when the VM process was
+killed. One guest was still running.
+
+**`lab-down` is the fix**, and it is in the image:
+
+```bash
+container machine run -n openstack-lab --root -- lab-down
+container machine stop openstack-lab
+```
+
+It shuts the guests down through libvirt rather than the OpenStack API — so it works
+when the control plane is unhealthy — giving them two minutes of ACPI before
+`virsh destroy`, then stops the Incus containers, which hold the passed-through loop and
+dm devices and run every Ceph daemon. Then it syncs and trims. Every step is bounded;
+a shutdown helper that can itself hang is worse than none.
+
+It does not touch the `hold-osd*` units or the volume groups. Those are what
+`ceph-lab-assemble` reassembles at boot, and the restart path is verified as it
+stands.
 
 There is no `container machine start`; the subcommand is `container machine run`.
 
@@ -3036,7 +3055,8 @@ sudo rm -f /var/lib/ceph-disks/*.img
 sudo rm -f /var/lib/openstack-lab/state/*.done
 ```
 
-From macOS: `container machine stop openstack-lab && container machine delete openstack-lab`.
+From macOS: `container machine run -n openstack-lab --root -- lab-down`, then
+`container machine stop openstack-lab && container machine delete openstack-lab`.
 
 ---
 

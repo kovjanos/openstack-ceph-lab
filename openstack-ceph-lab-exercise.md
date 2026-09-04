@@ -2817,11 +2817,18 @@ Keep `lab-workload`, the networks, the router, the flavors, the keypair and the
 security groups — they are Exercises 1 and 2, and rebuilding them wastes ten minutes
 every time.
 
-Then stop the machine cleanly:
+Then stop the machine cleanly. Run `lab-down` inside it first — it shuts the Nova
+guests down through libvirt and stops the Incus containers, which is what lets the stop
+finish quickly:
 
 ```bash
+container machine run -n openstack-lab --root -- lab-down
 container machine stop openstack-lab
 ```
+
+Skipping `lab-down` is not fatal, but a stop with a guest still running either errors
+after 12 seconds or sits printing progress for minutes — see *Stop can fail with
+instances running* in `openstack-ceph-lab-build.md`.
 
 To start again later:
 

@@ -195,6 +195,79 @@ iptables -t nat -C POSTROUTING -s 172.24.4.0/24 -o enp0s1 -j MASQUERADE 2>/dev/n
 iptables -t nat -A POSTROUTING -s 172.24.4.0/24 -o enp0s1 -j MASQUERADE
 SCRIPT
 
+cat > "$BUILD_DIR/lab-down.sh" <<'SCRIPT'
+#!/bin/sh
+# Release what holds the machine open, before stopping it from macOS.
+#
+# 'container machine stop' has to kill the machine's cgroup, and a running Nova
+# instance is a nested QEMU scope inside that cgroup which the host cannot kill.
+# Observed both ways: an error after 12s (errno 95 writing cgroup.kill for
+# machine-qemu\x2d...instance-00000018.scope) leaving 'container machine ls'
+# reporting a machine that is actually gone, and a stop that printed progress for
+# five minutes until the VM process was killed by hand. Below the guests, the
+# Incus containers pass a loop device and a dm node through and run the cephadm
+# daemons, so they come down next.
+#
+# Every step is bounded. A shutdown helper that can hang is worse than none.
+set -u
+say()  { echo "lab-down: $*"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# 1 -- Nova guests, through libvirt rather than the OpenStack API, so this still
+#      works when the control plane is unhealthy or partly stopped.
+if have docker && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nova_libvirt; then
+    running() { docker exec nova_libvirt virsh list --name 2>/dev/null | grep .; }
+    doms=$(running)
+    if [ -n "$doms" ]; then
+        say "shutting down $(printf '%s\n' "$doms" | wc -l | tr -d ' ') guest(s)"
+        for d in $doms; do docker exec nova_libvirt virsh shutdown "$d" >/dev/null 2>&1; done
+        i=0
+        while [ -n "$(running)" ] && [ "$i" -lt 24 ]; do sleep 5; i=$((i+1)); done
+        for d in $(running); do
+            say "$d ignored ACPI after 2 min, destroying it"
+            docker exec nova_libvirt virsh destroy "$d" >/dev/null 2>&1
+        done
+    fi
+    if [ -n "$(running)" ]; then
+        say "WARNING: guests still running -- the stop will probably stall"
+    else
+        say "no guests running"
+    fi
+fi
+
+# 2 -- Incus containers: block-device passthrough plus every Ceph daemon.
+if have incus; then
+    # -c ns --format csv only, and stop by name: the plain form 03-provision.sh
+    # already uses. No reliance on --all or --timeout being spelled the same way
+    # in this Incus build; the bound below is ours either way.
+    left() { incus list -c ns --format csv 2>/dev/null | awk -F, '$2=="RUNNING"{print $1}'; }
+    names=$(left)
+    if [ -n "$names" ]; then
+        say "stopping incus containers: $(echo $names | tr '\n' ' ')"
+        incus stop $names >/dev/null 2>&1 &
+        ip=$!
+        i=0
+        while kill -0 $ip 2>/dev/null && [ "$i" -lt 24 ]; do sleep 5; i=$((i+1)); done
+        kill -0 $ip 2>/dev/null && kill -9 $ip 2>/dev/null
+        names=$(left)
+        if [ -n "$names" ]; then
+            say "forcing: $(echo $names | tr '\n' ' ')"
+            incus stop $names --force >/dev/null 2>&1
+        fi
+    fi
+    if [ -n "$(left)" ]; then
+        say "WARNING: incus containers still running"
+    else
+        say "no incus containers running"
+    fi
+fi
+
+# 3 -- flush, and hand back blocks the exercises freed while we are here.
+sync
+fstrim / >/dev/null 2>&1
+say "done -- 'container machine stop' from macOS should now be quick"
+SCRIPT
+
 cat > "$BUILD_DIR/ceph-lab-assemble.sh" <<'SCRIPT'
 #!/bin/sh
 # Stage 1 -- runs before incus.service. Reattaches the loop devices and activates
@@ -510,6 +583,10 @@ RUN printf '%s\n' \
 # --- has a daemon to talk to).
 COPY lab-brex.sh /usr/local/sbin/lab-brex.sh
 RUN chmod 755 /usr/local/sbin/lab-brex.sh
+
+COPY lab-down.sh /usr/local/sbin/lab-down.sh
+RUN chmod 755 /usr/local/sbin/lab-down.sh && \
+    ln -sf /usr/local/sbin/lab-down.sh /usr/local/bin/lab-down
 RUN printf '%s\n' \\
   '[Unit]' \\
   'Description=Floating-IP gateway address on br-ex' \\
