@@ -472,6 +472,26 @@ RUN curl -fsSL https://download.ceph.com/keys/release.gpg \\
     apt-get update && apt-get install -y ceph-common ceph-fuse && \\
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# --- The machine's root is a sparse file on the Mac. It grows as the lab writes and
+# --- never shrinks on its own: Apple's runtime mounts / before systemd so there is no
+# --- fstab entry to add 'discard' to, and Ubuntu's fstrim.timer only fires weekly --
+# --- far too late for a lab built and torn down the same day. A finished lab leaves
+# --- ~9 GB of freed blocks still charged to the host image; 'lab-trim' hands them back.
+# ---
+# --- Deliberately a batch trim, not a 'discard' mount option. Mounting / with discard
+# --- was tried and makes every free a synchronous discard; a machine stop afterwards
+# --- hung for over seven hours instead of the usual five minutes.
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    '# Return blocks freed inside the VM to the disk image on the Mac.' \
+    'echo "guest usage before:"' \
+    'df -h /' \
+    'fstrim -v /' \
+    'echo "guest usage after:"' \
+    'df -h /' \
+    > /usr/local/sbin/lab-trim && chmod 755 /usr/local/sbin/lab-trim && \
+    ln -sf /usr/local/sbin/lab-trim /usr/local/bin/lab-trim
+
 # --- Storage units, in three stages. A single unit deadlocks: it would have to run
 # --- before Incus (so the LVs exist) and after Incus (so 'incus config device set'
 # --- has a daemon to talk to).

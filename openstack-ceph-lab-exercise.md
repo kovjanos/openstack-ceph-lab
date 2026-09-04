@@ -10,6 +10,68 @@ something the previous one created, it says so.
 Screenshots of the web-UI side of each exercise are in
 [`walkthrough/`](walkthrough/README.md), one file per exercise.
 
+## Contents
+
+- [Before you start](#before-you-start)
+- [Reaching a workload from your own browser](#reaching-a-workload-from-your-own-browser)
+- [Resource budget — read this first](#resource-budget--read-this-first)
+- [Running order](#running-order)
+
+**Part A. Foundation**
+
+- [1. Bootstrap the tenant](#exercise-1--bootstrap-the-tenant)
+- [2. Build the lab's own image](#exercise-2--build-the-labs-own-image)
+
+**Part B. One workload**
+
+- [3. A first workload](#exercise-3--a-first-workload)
+- [4. Persistent storage that outlives the instance](#exercise-4--persistent-storage-that-outlives-the-instance)
+- [5. Snapshot and restore](#exercise-5--snapshot-and-restore)
+- [6. Grow a volume that is already in use](#exercise-6--grow-a-volume-that-is-already-in-use)
+
+**Part C. Two workloads**
+
+- [7. Network isolation between a frontend and a backend](#exercise-7--network-isolation-between-a-frontend-and-a-backend)
+- [8. Move a service between hosts with a floating IP](#exercise-8--move-a-service-between-hosts-with-a-floating-ip)
+
+**Part D. Load balancing**
+
+- [9. One address, two servers](#exercise-9--one-address-two-servers)
+- [10. The session that keeps logging out](#exercise-10--the-session-that-keeps-logging-out)
+- [11. The load balancer died](#exercise-11--the-load-balancer-died)
+
+**Part E. Shared storage**
+
+- [12. Two workloads sharing one filesystem](#exercise-12--two-workloads-sharing-one-filesystem)
+- [13. Object storage for a workload](#exercise-13--object-storage-for-a-workload)
+
+**Part F. Platform operations**
+
+- [14. Encryption at rest, with the key in Barbican](#exercise-14--encryption-at-rest-with-the-key-in-barbican)
+- [15. Build the same thing declaratively with Heat](#exercise-15--build-the-same-thing-declaratively-with-heat)
+- [16. Quotas, and the ticket that starts "I can't launch anything"](#exercise-16--quotas-and-the-ticket-that-starts-i-cant-launch-anything)
+- [17. A second tenant, and proving they cannot see each other](#exercise-17--a-second-tenant-and-proving-they-cannot-see-each-other)
+
+**Part G. Ceph day-2**
+
+- [18. RADOS: the object store underneath all of it](#exercise-18--rados-the-object-store-underneath-all-of-it)
+- [19. Ceph maintenance mode](#exercise-19--ceph-maintenance-mode)
+- [20. Scoping credentials with a restricted Ceph user](#exercise-20--scoping-credentials-with-a-restricted-ceph-user)
+- [21. Extend the cluster with another disk](#exercise-21--extend-the-cluster-with-another-disk)
+- [22. Lose a disk while the service is running](#exercise-22--lose-a-disk-while-the-service-is-running)
+- [23. Replace a failed disk properly](#exercise-23--replace-a-failed-disk-properly)
+- [24. Filesystem snapshots that cost nothing](#exercise-24--filesystem-snapshots-that-cost-nothing)
+- [25. What replication actually costs you](#exercise-25--what-replication-actually-costs-you)
+- [26. Verify the data is really intact](#exercise-26--verify-the-data-is-really-intact)
+- [27. The monitoring you already have](#exercise-27--the-monitoring-you-already-have)
+- [28. Decommission the disk, and get the space back](#exercise-28--decommission-the-disk-and-get-the-space-back)
+
+**Part H. Recovery**
+
+- [29. Recover a cluster that has filled up](#exercise-29--recover-a-cluster-that-has-filled-up)
+- [Teardown](#teardown)
+
+---
 ## Before you start
 
 The lab must be up. From macOS:
@@ -129,8 +191,8 @@ fit 24 GB with less room to spare.
 | **D. Load balancing** | 9 one address two servers · 10 sticky sessions · 11 the load balancer died | 2 guests + 2 amphorae | LB build |
 | **E. Shared storage** | 12 shared NFS · 13 object storage | 2 guests | |
 | **F. Platform operations** | 14 encrypted volume · 15 Heat · 16 quotas · 17 projects & RBAC | 2 guests | |
-| **G. Ceph day-2** | 18 RADOS underneath · 19 maintenance mode · 20 restricted user · 21 failure drill · 22 disk replacement · 23 CephFS snapshots · 24 replication cost · 25 scrub · 26 monitoring · 27 node add/remove | 2 guests for 18, then 1 kept deliberately | |
-| **H. Recovery** | 28 full-cluster recovery · teardown | 1 guest | |
+| **G. Ceph day-2** | 18 RADOS underneath · 19 maintenance mode · 20 restricted user · 21 add a disk · 22 failure drill · 23 disk replacement · 24 CephFS snapshots · 25 replication cost · 26 scrub · 27 monitoring · 28 decommission the disk | 2 guests for 18, then 1 kept deliberately | |
+| **H. Recovery** | 29 full-cluster recovery · teardown | 1 guest | |
 
 **Part D needs the load-balancer build, which is on by default.** The four Octavia
 containers cost 1.4 GB all the time — ordinary here, where `neutron_server` alone is
@@ -152,6 +214,11 @@ rather than after.
 Exercise 9 retires the two guests from Part C before booting its own, and Exercise 11
 tears the load balancer down before Part G. Following the order keeps the peak at the
 figures above; skipping cleanups does not.
+
+**Part G never breaks a disk the cluster was built on.** Exercise 21 adds a fourth
+disk first; Exercises 22 and 23 then fail and replace *that* one, and Exercise 28
+decommissions it and hands its space back to macOS. A three-OSD cluster with one disk
+deliberately broken has no redundancy left, which is a poor place to be experimenting.
 
 Part G keeps a workload running on purpose. Watching a web page keep serving while an
 OSD is destroyed is the entire point of replication, and it costs nothing to leave one
@@ -302,8 +369,21 @@ incus exec ceph-node1 -- cephadm shell -- ceph df
 **In the web UI.** Horizon → Project → Compute → Images → Create Image, then upload the
 raw file. The customisation has to happen before upload; Horizon cannot edit an image.
 
-**Cleanup.** Keep `lab-workload` — every workload exercise from here uses it. You can
-delete `/tmp/*.raw` and `/tmp/*.qcow2` once the upload is confirmed `active`.
+**Cleanup.** Keep `lab-workload` — every workload exercise from here uses it. Once the
+upload is confirmed `active`:
+
+```bash
+rm -f /tmp/*.raw /tmp/*.qcow2
+fstrim /
+```
+
+**The `fstrim` is not optional housekeeping, and it is why every cleanup in this guide
+ends with one.** The VM's disk is a sparse file on the Mac that only ever grows. Deleting
+a file inside the guest frees the block for the guest and changes nothing on macOS — the
+image keeps the space until something tells the filesystem to hand it back. `fstrim` is
+that something. Ubuntu's `fstrim.timer` is enabled but runs weekly, which is no use to a
+lab built and torn down the same day. These two files are about 400 MB; by Exercise 29 it
+is several GB.
 
 ---
 
@@ -497,7 +577,7 @@ Measured here: snapshot 3s, restore-to-new-volume 3s, attach 6s.
 **In the web UI.** Horizon → Project → Volumes → Snapshots. "Create Volume" from a
 snapshot is on the snapshot's dropdown.
 
-**Cleanup.** Delete `data1-restored`; keep `data1` and `data1-snap` — Exercise 6
+**Cleanup.** Delete `data1-restored`, then `fstrim /`; keep `data1` and `data1-snap` — Exercise 6
 grows `data1`.
 
 ---
@@ -529,7 +609,8 @@ in any cloud, and it is always this.
 **In the web UI.** Horizon → Project → Volumes → the volume's dropdown → Extend Volume.
 The filesystem resize still has to happen inside the guest.
 
-**Cleanup.** Detach and delete `data1`, `data1-snap` and `data1-restored`; Exercise 7
+**Cleanup.** Detach and delete `data1`, `data1-snap` and `data1-restored`, then
+`fstrim /`; Exercise 7
 needs the memory, not the disk.
 
 ---
@@ -1111,7 +1192,7 @@ than a default.
 it — they live in Octavia's own service project. `openstack loadbalancer amphora list`
 is the only view.
 
-**Cleanup.** Delete the load balancer and its backends before Part E; Ceph day-2 wants
+**Cleanup.** Delete the load balancer and its backends, then `fstrim /`, before Part E; Ceph day-2 wants
 the memory:
 
 ```bash
@@ -1247,7 +1328,7 @@ RGW is not registered as a Swift endpoint in this lab.
 **In the web UI.** Ceph dashboard → Object Gateway → Buckets. Horizon has no view of
 it, since the gateway is not registered in Keystone.
 
-**Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 26 uses
+**Cleanup.** Keep the `assets` bucket — it costs almost nothing and Exercise 27 uses
 the cluster's usage figures. Keep `share2` as well; Exercise 18 needs a second instance
 to restore a volume onto, and deletes it when it is done.
 
@@ -1326,7 +1407,7 @@ storage layer instead.
 **In the web UI.** Horizon → Admin → Volume → Volume Types → Create Encrypted Volume
 Type. Barbican has no Horizon panel in this deployment.
 
-**Cleanup.** Detach and delete `secret-vol`; keep the `LUKS` volume type and the
+**Cleanup.** Detach and delete `secret-vol`, then `fstrim /`; keep the `LUKS` volume type and the
 `lab-demo` secret, both of which cost nothing.
 
 ---
@@ -1434,7 +1515,7 @@ OS stack delete --yes webstack
 **In the web UI.** Horizon → Project → Orchestration → Stacks, with a template editor
 and a resource topology view that is genuinely useful for seeing dependencies.
 
-**Cleanup.** The `stack delete` above is the cleanup. Verify with
+**Cleanup.** The `stack delete` above is the cleanup; follow it with `fstrim /`. Verify with
 `OS server list` that the stack's instance is gone.
 
 ---
@@ -1589,7 +1670,7 @@ mon_max_pg_per_osd value of 250
 
 Thirteen pools on three OSDs have nearly spent the cluster's PG budget. **Placement
 groups are a finite resource you allocate, not free metadata** — the same limit that
-bites in Exercise 27 when the OSD count drops.
+bites in Exercise 28 when the OSD count drops.
 
 Turning the autoscaler off is what keeps it at one. Leave it on and Ceph grows the pool
 to `pg_num 32` within a minute or two — sensible for a pool it expects you to fill,
@@ -1737,7 +1818,7 @@ live in RADOS**, and at that layer a volume is just a file you can copy.
 - **One object store, many interfaces.** Block, file and S3 are libraries over RADOS.
   A problem in all three at once is a Ceph problem; a problem in one is not.
 - **`rbd export` is a backup that does not need OpenStack.** It works when the APIs are
-  down, which is exactly when you need it — see Exercise 28.
+  down, which is exactly when you need it — see Exercise 29.
 - **Thin means thin.** 8 objects for a fresh filesystem, 256 only if you fill it.
 - **PGs are budgeted.** `mon_max_pg_per_osd` will refuse a pool you have no room for.
 - **Restoring below the API works, and Cinder will not notice.** Useful in a real
@@ -1770,7 +1851,7 @@ rm -f /tmp/rados-demo.img
 ```
 
 Pool deletion is disabled by default and you turn it back off afterwards, for the same
-reason `full-ratio` goes back to 0.95 in Exercise 28.
+reason `full-ratio` goes back to 0.95 in Exercise 29.
 
 ---
 
@@ -1864,442 +1945,16 @@ can do no harm, which is the point.
 
 ---
 
-## Exercise 21 — Lose a disk while the service is running
-
-**The situation.** 03:00, a disk fails. The page says `HEALTH_WARN` and a third of your
-objects are degraded. The question your manager will ask at 09:00 is not "what broke"
-but "was anything down?" — and you want to have already watched the answer.
-
-Keep a workload running for this. `share1` from Exercise 12 will do, serving a page you
-can poll throughout.
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph -s | grep -E 'health|osd:'
-# health: HEALTH_OK
-# osd: 3 osds: 3 up, 3 in
-```
-
-Kill one:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph orch daemon stop osd.1
-```
-
-Within about 35 seconds:
-
-```
-health: HEALTH_WARN
-osd: 3 osds: 2 up (since 35s), 3 in
-pgs: 646/1938 objects degraded (33.333%)
-```
-
-**Read that number.** With `size = 3`, losing one OSD degrades exactly one third of
-the replicas — 33.333% — and loses precisely nothing. Two copies of every object are
-still online.
-
-Now the part that matters:
-
-```bash
-wget -qO- http://<share1-floating-ip>/
-# <h1>created by share1</h1>
-rbd -n client.cinder --keyring /etc/ceph/ceph.client.cinder.keyring ls cinder-volumes
-# still lists
-```
-
-**From the host.** Serving the page from macOS while an OSD is missing proves it end to
-end, rather than from the hypervisor that hosts the storage:
-
-```bash
-lab-expose 18080 <share1-floating-ip>                          # in the VM
-while true; do curl -s --max-time 3 http://<vm-ip>:18080/; sleep 1; done
-```
-
-Leave that running across the `daemon stop` and `daemon start` below. The page keeps
-answering throughout — that is the entire claim of this exercise, and it is worth
-watching from outside the cloud rather than taking on trust.
-
-The workload never noticed. Bring the disk back:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph orch daemon start osd.1
-```
-
-`HEALTH_OK` returned in **30 seconds** here, because the OSD was only briefly absent
-and Ceph replayed the difference rather than recopying everything.
-
-**In the web UI.** Ceph dashboard → Cluster → OSDs, and the health panel on the
-landing page. Watching the degraded percentage fall in the dashboard is the clearest
-version of this exercise.
-
-**Cleanup.** Confirm `HEALTH_OK` and 3 OSDs up before continuing.
-
----
-
-## Exercise 22 — Replace a failed disk properly
-
-**The situation.** The disk from Exercise 21 is not coming back — it is genuinely
-dead. You need to remove it from the cluster, put a new one in, and get back to full
-redundancy. Doing this in the wrong order leaves half-states that block the
-replacement, which is why it is worth rehearsing before it is urgent.
-
-**Drain it first.** `out` moves data off while the OSD is still running, so redundancy
-is restored *before* you remove anything:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph osd out osd.1
-incus exec ceph-node1 -- cephadm shell -- ceph osd tree
-#  1  hdd  0.01459  osd.1  up  0  1.00000     <- up, but weight 0
-```
-
-Then remove the daemon and the CRUSH entry:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph orch daemon stop osd.1
-incus exec ceph-node1 -- cephadm shell -- ceph orch daemon rm  osd.1 --force
-incus exec ceph-node1 -- cephadm shell -- ceph osd purge 1 --yes-i-really-mean-it
-incus exec ceph-node1 -- cephadm shell -- ceph osd tree
-# host ceph-node2 now has weight 0 and no OSDs
-```
-
-### The step everyone misses
-
-The "new disk" here is the same LV, and it is **not** blank — `ceph-volume` left its
-own LVM tags on it. Skip this and the re-add fails with the deeply unhelpful
-`Created no osd(s) on host X; already created?`, because ceph-volume sees its own
-tags and declines:
-
-```bash
-lvs --noheadings -o lv_name,lv_tags ceph-vg2/osd2      # ceph.block_device=..., ceph.osd_id=...
-
-for t in $(lvs --noheadings -o lv_tags ceph-vg2/osd2 | tr ',' ' '); do
-  lvchange --deltag "$t" ceph-vg2/osd2
-done
-dd if=/dev/zero of=/dev/ceph-vg2/osd2 bs=1M count=100 conv=fsync   # wipe the BlueStore label
-lvs --noheadings -o lv_name,lv_tags ceph-vg2/osd2      # tags column now empty
-```
-
-Recreate the device nodes in the container, then add the disk back:
-
-```bash
-incus exec ceph-node2 -- bash -c 'rm -rf /dev/ceph-vg*/ /dev/mapper/ceph--*; dmsetup mknodes; vgmknodes'
-incus exec ceph-node1 -- cephadm shell -- ceph orch daemon add osd ceph-node2:ceph-vg2/osd2
-# Created osd(s) 1 on host 'ceph-node2'
-```
-
-`HEALTH_OK` returned in **15 seconds** here — the cluster is small and most data was
-already on the surviving OSDs.
-
-**Every failed attempt re-tags the LV**, so clear the tags again before each retry. If
-an OSD id is left orphaned in the CRUSH map, `ceph osd purge <id> --yes-i-really-mean-it`
-clears that too.
-
-**In the web UI.** Ceph dashboard → Cluster → OSDs has Out / Down / Purge in the OSD's
-menu. Creating an OSD from the dashboard needs a device the inventory can see, which
-in this lab it cannot — see the note about `ceph orch device ls` in the build guide.
-
-**Cleanup.** Confirm `HEALTH_OK` and 3 OSDs up and in.
-
----
-
-## Exercise 23 — Filesystem snapshots that cost nothing
-
-**The situation.** Someone is about to run a migration script against the shared
-document root. You want a restore point, you want it in one command, and you do not
-want to detach anything or stop the web servers.
-
-Cinder snapshots (Exercise 5) need the volume detached. CephFS snapshots do not — they
-are a directory you create.
-
-The VM's kernel has no CephFS driver, so mount it with the userspace client:
-
-```bash
-incus exec ceph-node1 -- cat /etc/ceph/ceph.client.admin.keyring > /etc/ceph/ceph.client.admin.keyring
-chmod 600 /etc/ceph/ceph.client.admin.keyring
-mkdir -p /mnt/cephfs && ceph-fuse -n client.admin /mnt/cephfs
-```
-
-**Nothing to install.** `ceph-fuse` is in the machine image, from the same pinned
-`download.ceph.com/debian-20.2.2` repo as `ceph-common`. That is deliberate rather than
-convenient: installing it here would mean an `apt-get update` inside a machine whose
-whole premise is a pinned Ceph version, and a mismatched client cannot read the cephx
-keys a Tentacle cluster mints. Nothing in this lab asks you to install packages in the
-VM, and if you find yourself doing so, something is wrong.
-
-Now the whole feature:
-
-```bash
-mkdir /mnt/cephfs/.snap/before-migration       # this IS the snapshot
-```
-
-Cause the incident and recover:
-
-```bash
-rm -f /mnt/cephfs/index.html
-ls /mnt/cephfs/                                # gone
-ls /mnt/cephfs/.snap/before-migration/         # still there
-cp /mnt/cephfs/.snap/before-migration/index.html /mnt/cephfs/
-```
-
-List and remove snapshots the same way:
-
-```bash
-ls /mnt/cephfs/.snap/
-rmdir /mnt/cephfs/.snap/before-migration
-```
-
-`mkdir` to snapshot, `rmdir` to release. They are copy-on-write, so an idle snapshot
-costs nothing and only diverging data consumes space — which makes "snapshot before
-you touch it" a habit you can actually afford.
-
-**The `.snap` directory is not visible over NFS.** Ganesha does not export it, so this
-has to be done on a native CephFS mount, not from the guests using the share.
-
-**In the web UI.** Ceph dashboard → File Systems → the filesystem → Snapshots, for
-snapshots taken on subvolumes.
-
-**Cleanup.** `umount /mnt/cephfs`. Leave the export and its contents — the guests are
-still using it.
-
----
-
-## Exercise 24 — What replication actually costs you
-
-**The situation.** Someone asks for a 10 TB volume and you have 20 TB of disk. You have
-to explain why the answer is no. Replication is the single biggest factor in what a
-Ceph cluster can actually hold, and the arithmetic is worth doing once with real
-numbers rather than in your head.
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph df
-```
-
-```
-TOTAL           45 GiB   40 GiB avail
-cinder-volumes  55 MiB stored   160 MiB used   MAX AVAIL 13 GiB
-```
-
-Three numbers matter: **stored** is your data, **used** is what it occupies after
-replication (roughly 3×), and **MAX AVAIL** is what you can still write. On a 45 GiB
-cluster at `size = 3` you have about 13 GiB of usable space, not 45.
-
-**The clearest example is sitting in your own cluster.** Look at the images pool:
-
-```
-glance-images   2.8 GiB stored   8.3 GiB used   MAX AVAIL 11 GiB
-```
-
-Almost all of that is the amphora image from the load-balancer build — 2.5 GiB of
-image, charged at 7.5 GiB of cluster. One file took the cluster from 6% to 22% full and
-cost every other pool 2 GiB of MAX AVAIL, without anyone writing a byte of data. That
-is the entire lesson, and it is why `lab-workload` is a 248 MB Alpine build rather than
-a 3.5 GB distro image: that swap alone would cost 10.5 GiB here.
-
-(Built with `ENABLE_NETWORK_LOADBALANCER=no`? Then `glance-images` holds only
-`lab-workload`, your figures are smaller, and MAX AVAIL is correspondingly larger.)
-
-Change it and watch:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph osd pool set cinder-volumes size 2
-incus exec ceph-node1 -- cephadm shell -- ceph df
-```
-
-```
-cinder-volumes  55 MiB stored   106 MiB used   MAX AVAIL 19 GiB
-```
-
-Usable space went from 13 GiB to 19 GiB, and the same data now occupies 106 MiB
-instead of 160 MiB — purely by keeping two copies instead of three.
-
-**Put it back.** `size = 2` means one disk failure leaves you with a single copy and
-no redundancy at all while it recovers:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph osd pool set cinder-volumes size 3
-```
-
-This is also the answer to the capacity incident in Exercise 28: an image is charged
-at `size × replication`, so a 3.5 GB image costs 10.5 GB of cluster.
-
-**In the web UI.** Ceph dashboard → Pools shows size, usage and the same MAX AVAIL.
-
-**Cleanup.** Verify every pool is back at `size 3`:
-`ceph osd pool ls detail | grep -o 'size [0-9]'`.
-
----
-
-## Exercise 25 — Verify the data is really intact
-
-**The situation.** Ceph tells you `HEALTH_OK`, which means every object is *present*
-and the right number of copies exist. It does not, by itself, mean the bytes are still
-correct. Scrubbing is what checks that, and it is worth knowing how to trigger on
-demand — after a power loss, or a disk that has been throwing errors.
-
-```bash
-PG=$(incus exec ceph-node1 -- cephadm shell -- ceph pg ls | awk 'NR==2{print $1}')
-incus exec ceph-node1 -- cephadm shell -- ceph pg deep-scrub "$PG"
-# instructing pg 1.0 on osd.1 to deep-scrub
-```
-
-A normal **scrub** compares object metadata and is cheap. A **deep-scrub** reads every
-byte and compares checksums — it is the real integrity check, and it costs I/O, which
-is why Ceph schedules them slowly in the background.
-
-Watch the result:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph pg ls | head -3
-incus exec ceph-node1 -- cephadm shell -- ceph -s
-```
-
-If a deep-scrub finds a mismatch the cluster goes `HEALTH_ERR` with
-`X scrub errors` and `Possible data damage: N pg inconsistent`. The repair is:
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph pg repair <pgid>
-```
-
-**Do not reach for `pg repair` reflexively.** It resolves the inconsistency by
-trusting the primary copy, which is the right answer for a bit-flip on a replica and
-the wrong one if the primary is the damaged copy. On a real cluster, find out which
-disk is failing first.
-
-**In the web UI.** Ceph dashboard → Pools → Placement Groups shows scrub state and
-timestamps.
-
-**Cleanup.** Nothing to remove.
-
----
-
-## Exercise 26 — The monitoring you already have
-
-**The situation.** You want graphs of cluster throughput and OSD latency, and you are
-about to go and install Prometheus. You do not need to: `cephadm` deployed the whole
-stack when it bootstrapped the cluster, and it has been scraping ever since.
-
-```bash
-incus exec ceph-node1 -- cephadm shell -- ceph orch ls | grep -E 'prometheus|grafana|alertmanager|exporter'
-```
-
-```
-alertmanager   ?:9093,9094      1/1
-ceph-exporter  ?:9926           3/3
-grafana        ?:3000           1/1
-node-exporter  ?:9100           3/3
-prometheus     ?:9095           1/1
-```
-
-Five services, none of which you installed. `node-exporter` and `ceph-exporter` run on
-every host; the other three run once.
-
-### Reaching them from macOS
-
-They listen on the Incus bridge, so each needs a proxy device the same way the
-dashboard does. `90-verify` adds all three and prints the URLs:
-
-```bash
-provision-lab --only 90-verify
-```
-
-```
-Ceph dashboard https://<VM_IP>:8443/    admin / ChangeMeBeforeUse
-Grafana        https://<VM_IP>:3000/    embedded in the Ceph dashboard; self-signed
-Prometheus     http://<VM_IP>:9095/
-Alertmanager   http://<VM_IP>:9093/
-```
-
-**Visit `https://<VM_IP>:3000/` once and accept the certificate.** Grafana has its own
-self-signed cert, separate from the dashboard's. The dashboard shows Grafana's graphs
-in an iframe that your *browser* loads, so until the browser trusts that certificate
-every "Overall Performance" tab is an empty grey box — with no error message, because
-the dashboard never learns the browser refused it. This is the single most confusing
-failure in the whole monitoring setup, and it takes one click to avoid.
-
-### The graphs
-
-With that done, the embedded panels work:
-
-- **Cluster → Hosts → Overall Performance** — CPU, RAM and network per host
-- **Cluster → OSDs → Overall Performance** — read/write latency percentiles, PG
-  distribution, device class breakdown. The usual first stop when something is "slow"
-- **Cluster → Pools → Overall Performance** — per-pool throughput, next to the MAX
-  AVAIL from Exercise 24
-
-Grafana on its own at `https://<VM_IP>:3000/dashboards` has about twenty pre-built Ceph
-dashboards the embedded views only sample — *Ceph Cluster - Advanced*, *Ceph Pool
-Details*, *OSD device details*, *RBD Details*, *MDS Performance*, *RGW Overview*. No
-login needed: cephadm enables anonymous viewing so the iframes work, which means you
-get them too.
-
-### Where the numbers come from
-
-`http://<VM_IP>:9095/targets` lists every scrape target and its state:
-
-```
-ceph            1 / 1 up     http://ceph-node1:9283/metrics
-ceph-exporter   3 / 3 up     http://10.100.0.1{1,2,3}:9926/metrics
-nfs             1 / 1 up     http://10.100.0.11:9587/metrics
-node            3 / 3 up     http://10.100.0.1{1,2,3}:9100/metrics
-```
-
-If a Grafana panel is empty, check here before anything else — a panel with no data and
-a target that is `DOWN` are the same fault, and this page names it.
-
-The query browser at `http://<VM_IP>:9095/graph` takes PromQL directly. Two worth
-trying, because they are the ones you end up writing during an incident:
-
-```promql
-ceph_osd_op_r_latency_sum / ceph_osd_op_r_latency_count
-ceph_cluster_total_used_bytes / ceph_cluster_total_bytes
-```
-
-The first returns one series per OSD — average read latency in seconds, around 1 ms
-here. The second returns a single number that should match the capacity donut on the
-dashboard Overview exactly; if it does not, one of the two is reading stale data.
-
-### Alerting
-
-**Observability → Alerts** has three tabs. **Active Alerts** is empty on a healthy
-cluster — that page working at all is the proof Alertmanager is wired up. **Alert
-Rules** is the interesting one: 89 rules that Prometheus already evaluates, each with a
-severity and a firing delay.
-
-```
-CephDaemonCrash             critical  generic        60s
-CephDaemonSlowOps           warning   healthchecks   30s
-CephDeviceFailurePredicted  warning   osd            60s
-CephMonDown                 warning   mon            30s
-CephOSDNearFull             warning   osd           300s
-CephOSDFull                 critical  osd            60s
-CephPGsDamaged              critical  pgs           300s
-```
-
-`CephOSDNearFull` fires at 85% after five minutes. That is the alert that would have
-caught Exercise 28 while it was still recoverable, rather than at 95% when writes had
-already stopped.
-
-**Nothing is delivered, though.** Alertmanager has no receiver configured, so rules
-fire into the dashboard and stop there. Wiring one up — email, a webhook, Slack — is a
-`ceph orch` config change and the natural next step beyond this lab.
-
-### Do it with something happening
-
-Re-run the failure drill from Exercise 21 with **Cluster → OSDs** open. Watching the
-degraded-object count climb and drain away, and the latency panel spike, is far more
-legible than reading `ceph -s` in a loop — and it is how you will actually experience
-the real thing.
-
-**In the web UI.** All of it. This exercise is the web UI.
-
-**Cleanup.** Nothing.
-
----
-
-## Exercise 27 — Add a node, then take it away again
-
-**The situation.** The cluster is filling up and you have budget for another storage
-node. Later, that node is being decommissioned. Both directions are routine, and both
-leave things behind if you stop at the obvious step — which is the real lesson here.
+## Exercise 21 — Extend the cluster with another disk
+
+**The situation.** The cluster is filling up and you have budget for one more disk.
+Adding it is routine, and it is worth doing before you need it rather than during an
+incident.
+
+It also makes the next two exercises safe. Exercises 22 and 23 take a disk away and
+break it on purpose; doing that to one of the three the cluster was built on leaves a
+lab with no redundancy if anything goes wrong. Add a disk first, then abuse **that**
+one. That is also how you would rehearse a failure on a real cluster.
 
 ### Adding
 
@@ -2375,6 +2030,476 @@ incus exec ceph-node1 -- cephadm shell -- ceph osd tree
 
 The weight (0.00780 for 8 GB vs 0.01459 for 15 GB) is how Ceph knows to give the
 smaller disk proportionally less data.
+
+---
+
+## Exercise 22 — Lose a disk while the service is running
+
+**The situation.** 03:00, a disk fails. The page says `HEALTH_WARN` and a third of your
+objects are degraded. The question your manager will ask at 09:00 is not "what broke"
+but "was anything down?" — and you want to have already watched the answer.
+
+Keep a workload running for this. `share1` from Exercise 12 will do, serving a page you
+can poll throughout.
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph -s | grep -E 'health|osd:'
+# health: HEALTH_OK
+# osd: 3 osds: 3 up, 3 in
+```
+
+Kill one:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph orch daemon stop osd.3
+```
+
+Within about 35 seconds:
+
+```
+health: HEALTH_WARN
+osd: 3 osds: 2 up (since 35s), 3 in
+pgs: 646/1938 objects degraded (33.333%)
+```
+
+**Read that number.** With `size = 3`, losing one OSD degrades exactly one third of
+the replicas — 33.333% — and loses precisely nothing. Two copies of every object are
+still online.
+
+Now the part that matters:
+
+```bash
+wget -qO- http://<share1-floating-ip>/
+# <h1>created by share1</h1>
+rbd -n client.cinder --keyring /etc/ceph/ceph.client.cinder.keyring ls cinder-volumes
+# still lists
+```
+
+**From the host.** Serving the page from macOS while an OSD is missing proves it end to
+end, rather than from the hypervisor that hosts the storage:
+
+```bash
+lab-expose 18080 <share1-floating-ip>                          # in the VM
+while true; do curl -s --max-time 3 http://<vm-ip>:18080/; sleep 1; done
+```
+
+Leave that running across the `daemon stop` and `daemon start` below. The page keeps
+answering throughout — that is the entire claim of this exercise, and it is worth
+watching from outside the cloud rather than taking on trust.
+
+The workload never noticed. Bring the disk back:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph orch daemon start osd.3
+```
+
+`HEALTH_OK` returned in **30 seconds** here, because the OSD was only briefly absent
+and Ceph replayed the difference rather than recopying everything.
+
+**In the web UI.** Ceph dashboard → Cluster → OSDs, and the health panel on the
+landing page. Watching the degraded percentage fall in the dashboard is the clearest
+version of this exercise.
+
+**Cleanup.** Confirm `HEALTH_OK` and 3 OSDs up before continuing.
+
+---
+
+## Exercise 23 — Replace a failed disk properly
+
+**The situation.** The disk from Exercise 22 is not coming back — it is genuinely
+dead. You need to remove it from the cluster, put a new one in, and get back to full
+redundancy. Doing this in the wrong order leaves half-states that block the
+replacement, which is why it is worth rehearsing before it is urgent.
+
+You are still working on `osd.3`, the disk Exercise 21 added. The three the cluster was
+built on are never touched — that is the whole reason the extra disk exists. Here the
+"replacement" is the same LV re-added, which is realistic enough: a replaced disk is
+blank, and this one has to be made blank first.
+
+**Drain it first.** `out` moves data off while the OSD is still running, so redundancy
+is restored *before* you remove anything:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph osd out osd.3
+incus exec ceph-node1 -- cephadm shell -- ceph osd tree
+#  3  hdd  0.00488  osd.3  up  0  1.00000     <- up, but weight 0
+```
+
+Then remove the daemon and the CRUSH entry:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph orch daemon stop osd.3
+incus exec ceph-node1 -- cephadm shell -- ceph orch daemon rm  osd.3 --force
+incus exec ceph-node1 -- cephadm shell -- ceph osd purge 3 --yes-i-really-mean-it
+incus exec ceph-node1 -- cephadm shell -- ceph osd tree
+# host ceph-node4 now has weight 0 and no OSDs
+```
+
+### The step everyone misses
+
+The "new disk" here is the same LV, and it is **not** blank — `ceph-volume` left its
+own LVM tags on it. Skip this and the re-add fails with the deeply unhelpful
+`Created no osd(s) on host X; already created?`, because ceph-volume sees its own
+tags and declines:
+
+```bash
+lvs --noheadings -o lv_name,lv_tags ceph-vg4/osd4      # ceph.block_device=..., ceph.osd_id=...
+
+for t in $(lvs --noheadings -o lv_tags ceph-vg4/osd4 | tr ',' ' '); do
+  lvchange --deltag "$t" ceph-vg4/osd4
+done
+dd if=/dev/zero of=/dev/ceph-vg4/osd4 bs=1M count=100 conv=fsync   # wipe the BlueStore label
+lvs --noheadings -o lv_name,lv_tags ceph-vg4/osd4      # tags column now empty
+```
+
+Recreate the device nodes in the container, then add the disk back:
+
+```bash
+incus exec ceph-node4 -- bash -c 'rm -rf /dev/ceph-vg*/ /dev/mapper/ceph--*; dmsetup mknodes; vgmknodes'
+incus exec ceph-node1 -- cephadm shell -- ceph orch daemon add osd ceph-node4:ceph-vg4/osd4
+# Created osd(s) 3 on host 'ceph-node4'
+```
+
+`HEALTH_OK` returned in **15 seconds** here — the cluster is small and most data was
+already on the surviving OSDs.
+
+**Every failed attempt re-tags the LV**, so clear the tags again before each retry. If
+an OSD id is left orphaned in the CRUSH map, `ceph osd purge <id> --yes-i-really-mean-it`
+clears that too.
+
+**In the web UI.** Ceph dashboard → Cluster → OSDs has Out / Down / Purge in the OSD's
+menu. Creating an OSD from the dashboard needs a device the inventory can see, which
+in this lab it cannot — see the note about `ceph orch device ls` in the build guide.
+
+**Cleanup.** Confirm `HEALTH_OK` and 3 OSDs up and in.
+
+---
+
+## Exercise 24 — Filesystem snapshots that cost nothing
+
+**The situation.** Someone is about to run a migration script against the shared
+document root. You want a restore point, you want it in one command, and you do not
+want to detach anything or stop the web servers.
+
+Cinder snapshots (Exercise 5) need the volume detached. CephFS snapshots do not — they
+are a directory you create.
+
+The VM's kernel has no CephFS driver, so mount it with the userspace client:
+
+```bash
+incus exec ceph-node1 -- cat /etc/ceph/ceph.client.admin.keyring > /etc/ceph/ceph.client.admin.keyring
+chmod 600 /etc/ceph/ceph.client.admin.keyring
+mkdir -p /mnt/cephfs && ceph-fuse -n client.admin /mnt/cephfs
+```
+
+**Nothing to install.** `ceph-fuse` is in the machine image, from the same pinned
+`download.ceph.com/debian-20.2.2` repo as `ceph-common`. That is deliberate rather than
+convenient: installing it here would mean an `apt-get update` inside a machine whose
+whole premise is a pinned Ceph version, and a mismatched client cannot read the cephx
+keys a Tentacle cluster mints. Nothing in this lab asks you to install packages in the
+VM, and if you find yourself doing so, something is wrong.
+
+Now the whole feature:
+
+```bash
+mkdir /mnt/cephfs/.snap/before-migration       # this IS the snapshot
+```
+
+Cause the incident and recover:
+
+```bash
+rm -f /mnt/cephfs/index.html
+ls /mnt/cephfs/                                # gone
+ls /mnt/cephfs/.snap/before-migration/         # still there
+cp /mnt/cephfs/.snap/before-migration/index.html /mnt/cephfs/
+```
+
+List and remove snapshots the same way:
+
+```bash
+ls /mnt/cephfs/.snap/
+rmdir /mnt/cephfs/.snap/before-migration
+```
+
+`mkdir` to snapshot, `rmdir` to release. They are copy-on-write, so an idle snapshot
+costs nothing and only diverging data consumes space — which makes "snapshot before
+you touch it" a habit you can actually afford.
+
+**The `.snap` directory is not visible over NFS.** Ganesha does not export it, so this
+has to be done on a native CephFS mount, not from the guests using the share.
+
+**In the web UI.** Ceph dashboard → File Systems → the filesystem → Snapshots, for
+snapshots taken on subvolumes.
+
+**Cleanup.** `umount /mnt/cephfs`. Leave the export and its contents — the guests are
+still using it.
+
+---
+
+## Exercise 25 — What replication actually costs you
+
+**The situation.** Someone asks for a 10 TB volume and you have 20 TB of disk. You have
+to explain why the answer is no. Replication is the single biggest factor in what a Ceph
+cluster can actually hold, and the arithmetic is worth doing once with real numbers
+rather than in your head.
+
+This lab runs at `size = 2`, not the Ceph default of 3. That is a deliberate choice for a
+three-OSD cluster on a laptop — at 3, the amphora image alone would eat most of the
+usable space. So rather than dropping a copy to save room, you are going to **buy the
+third copy for one pool** and watch what it costs.
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph df
+```
+
+```
+TOTAL           26 GiB   16 GiB avail   10 GiB used   38.57%
+glance-images   1.4 GiB stored   2.9 GiB used   MAX AVAIL 6.3 GiB
+cinder-volumes   31 KiB stored    70 KiB used   MAX AVAIL 6.3 GiB
+```
+
+Three numbers matter: **stored** is your data, **used** is what it occupies after
+replication, and **MAX AVAIL** is what you can still write. Note that `used` is about
+twice `stored`, not three times — that is `size = 2`.
+
+**The clearest example is sitting in your own cluster.** Look at the images pool:
+
+```
+glance-images   1.4 GiB stored   2.9 GiB used   MAX AVAIL 6.3 GiB
+```
+
+Most of that is the amphora image from the load-balancer build. One file, charged at
+twice its size, and it cost every other pool a share of MAX AVAIL without anyone writing
+a byte of application data. That is the entire lesson, and it is why `lab-workload` is a
+248 MB Alpine build rather than a 3.5 GB distro image.
+
+(Built with `ENABLE_NETWORK_LOADBALANCER=no`? Then `glance-images` holds only
+`lab-workload`, your figures are smaller, and MAX AVAIL is correspondingly larger.)
+
+### Buy the third copy
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool set cinder-volumes size 3
+incus exec ceph-node1 -- cephadm shell -- ceph df
+```
+
+```
+TOTAL           26 GiB   16 GiB avail   9.5 GiB used   36.74%
+glance-images   1.3 GiB stored   2.7 GiB used   MAX AVAIL 7.2 GiB
+cinder-volumes   20 KiB stored    73 KiB used   MAX AVAIL 4.8 GiB
+```
+
+**Look at `cinder-volumes`: MAX AVAIL fell from 6.3 GiB to 4.8 GiB.** A quarter of the
+space you could have written is gone, and you did not store a single extra byte —
+you only asked for a third copy of what was already there.
+
+The pool itself is nearly empty at this point, so its own `used` figure barely moves.
+That is worth understanding rather than glossing over: `stored` × `size` is the pool's
+cost, but **MAX AVAIL is computed from free space across the whole cluster divided by
+the pool's replication factor**. Raising `size` on an empty pool still cuts its usable
+space by a third, because every future byte will cost three instead of two.
+
+Note `glance-images` moved the other way, 6.3 GiB to 7.2 GiB. It is still at size 2, and
+the rebalance freed a little raw space, so its share went up. MAX AVAIL is per-pool, not
+a single number for the cluster.
+
+Nothing was written. The same bytes now cost half again as much, and every other pool
+lost MAX AVAIL to pay for it — because MAX AVAIL is computed from free space across the
+whole cluster, not per pool.
+
+### Put it back
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph osd pool set cinder-volumes size 2
+```
+
+**What you are trading.** At `size = 2` with `min_size = 1`, losing one OSD leaves a
+single copy and writes keep flowing — you saw exactly that in Exercise 22. Lose a second
+before recovery finishes and the data is gone. At `size = 3` you would survive two.
+For a laptop lab that trade is right; for anything holding real data it is not, and the
+number to change is `osd_pool_default_size` in `03-provision.sh`.
+
+**In the web UI.** Ceph dashboard → Cluster → Pools shows size, usage and the same MAX
+AVAIL. Editing a pool's size from the dashboard is the Edit button on the pool row.
+
+**Cleanup.** Verify every pool is back at `size 2`:
+`ceph osd pool ls detail | grep -o 'size [0-9]'`.
+
+---
+
+## Exercise 26 — Verify the data is really intact
+
+**The situation.** Ceph tells you `HEALTH_OK`, which means every object is *present*
+and the right number of copies exist. It does not, by itself, mean the bytes are still
+correct. Scrubbing is what checks that, and it is worth knowing how to trigger on
+demand — after a power loss, or a disk that has been throwing errors.
+
+```bash
+PG=$(incus exec ceph-node1 -- cephadm shell -- ceph pg ls | awk 'NR==2{print $1}')
+incus exec ceph-node1 -- cephadm shell -- ceph pg deep-scrub "$PG"
+# instructing pg 1.0 on osd.1 to deep-scrub
+```
+
+A normal **scrub** compares object metadata and is cheap. A **deep-scrub** reads every
+byte and compares checksums — it is the real integrity check, and it costs I/O, which
+is why Ceph schedules them slowly in the background.
+
+Watch the result:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph pg ls | head -3
+incus exec ceph-node1 -- cephadm shell -- ceph -s
+```
+
+If a deep-scrub finds a mismatch the cluster goes `HEALTH_ERR` with
+`X scrub errors` and `Possible data damage: N pg inconsistent`. The repair is:
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph pg repair <pgid>
+```
+
+**Do not reach for `pg repair` reflexively.** It resolves the inconsistency by
+trusting the primary copy, which is the right answer for a bit-flip on a replica and
+the wrong one if the primary is the damaged copy. On a real cluster, find out which
+disk is failing first.
+
+**In the web UI.** Ceph dashboard → Pools → Placement Groups shows scrub state and
+timestamps.
+
+**Cleanup.** Nothing to remove.
+
+---
+
+## Exercise 27 — The monitoring you already have
+
+**The situation.** You want graphs of cluster throughput and OSD latency, and you are
+about to go and install Prometheus. You do not need to: `cephadm` deployed the whole
+stack when it bootstrapped the cluster, and it has been scraping ever since.
+
+```bash
+incus exec ceph-node1 -- cephadm shell -- ceph orch ls | grep -E 'prometheus|grafana|alertmanager|exporter'
+```
+
+```
+alertmanager   ?:9093,9094      1/1
+ceph-exporter  ?:9926           3/3
+grafana        ?:3000           1/1
+node-exporter  ?:9100           3/3
+prometheus     ?:9095           1/1
+```
+
+Five services, none of which you installed. `node-exporter` and `ceph-exporter` run on
+every host; the other three run once.
+
+### Reaching them from macOS
+
+They listen on the Incus bridge, so each needs a proxy device the same way the
+dashboard does. `90-verify` adds all three and prints the URLs:
+
+```bash
+provision-lab --only 90-verify
+```
+
+```
+Ceph dashboard https://<VM_IP>:8443/    admin / ChangeMeBeforeUse
+Grafana        https://<VM_IP>:3000/    embedded in the Ceph dashboard; self-signed
+Prometheus     http://<VM_IP>:9095/
+Alertmanager   http://<VM_IP>:9093/
+```
+
+**Visit `https://<VM_IP>:3000/` once and accept the certificate.** Grafana has its own
+self-signed cert, separate from the dashboard's. The dashboard shows Grafana's graphs
+in an iframe that your *browser* loads, so until the browser trusts that certificate
+every "Overall Performance" tab is an empty grey box — with no error message, because
+the dashboard never learns the browser refused it. This is the single most confusing
+failure in the whole monitoring setup, and it takes one click to avoid.
+
+### The graphs
+
+With that done, the embedded panels work:
+
+- **Cluster → Hosts → Overall Performance** — CPU, RAM and network per host
+- **Cluster → OSDs → Overall Performance** — read/write latency percentiles, PG
+  distribution, device class breakdown. The usual first stop when something is "slow"
+- **Cluster → Pools → Overall Performance** — per-pool throughput, next to the MAX
+  AVAIL from Exercise 25
+
+Grafana on its own at `https://<VM_IP>:3000/dashboards` has about twenty pre-built Ceph
+dashboards the embedded views only sample — *Ceph Cluster - Advanced*, *Ceph Pool
+Details*, *OSD device details*, *RBD Details*, *MDS Performance*, *RGW Overview*. No
+login needed: cephadm enables anonymous viewing so the iframes work, which means you
+get them too.
+
+### Where the numbers come from
+
+`http://<VM_IP>:9095/targets` lists every scrape target and its state:
+
+```
+ceph            1 / 1 up     http://ceph-node1:9283/metrics
+ceph-exporter   3 / 3 up     http://10.100.0.1{1,2,3}:9926/metrics
+nfs             1 / 1 up     http://10.100.0.11:9587/metrics
+node            3 / 3 up     http://10.100.0.1{1,2,3}:9100/metrics
+```
+
+If a Grafana panel is empty, check here before anything else — a panel with no data and
+a target that is `DOWN` are the same fault, and this page names it.
+
+The query browser at `http://<VM_IP>:9095/graph` takes PromQL directly. Two worth
+trying, because they are the ones you end up writing during an incident:
+
+```promql
+ceph_osd_op_r_latency_sum / ceph_osd_op_r_latency_count
+ceph_cluster_total_used_bytes / ceph_cluster_total_bytes
+```
+
+The first returns one series per OSD — average read latency in seconds, around 1 ms
+here. The second returns a single number that should match the capacity donut on the
+dashboard Overview exactly; if it does not, one of the two is reading stale data.
+
+### Alerting
+
+**Observability → Alerts** has three tabs. **Active Alerts** is empty on a healthy
+cluster — that page working at all is the proof Alertmanager is wired up. **Alert
+Rules** is the interesting one: 89 rules that Prometheus already evaluates, each with a
+severity and a firing delay.
+
+```
+CephDaemonCrash             critical  generic        60s
+CephDaemonSlowOps           warning   healthchecks   30s
+CephDeviceFailurePredicted  warning   osd            60s
+CephMonDown                 warning   mon            30s
+CephOSDNearFull             warning   osd           300s
+CephOSDFull                 critical  osd            60s
+CephPGsDamaged              critical  pgs           300s
+```
+
+`CephOSDNearFull` fires at 85% after five minutes. That is the alert that would have
+caught Exercise 28 while it was still recoverable, rather than at 95% when writes had
+already stopped.
+
+**Nothing is delivered, though.** Alertmanager has no receiver configured, so rules
+fire into the dashboard and stop there. Wiring one up — email, a webhook, Slack — is a
+`ceph orch` config change and the natural next step beyond this lab.
+
+### Do it with something happening
+
+Re-run the failure drill from Exercise 22 with **Cluster → OSDs** open. Watching the
+degraded-object count climb and drain away, and the latency panel spike, is far more
+legible than reading `ceph -s` in a loop — and it is how you will actually experience
+the real thing.
+
+**In the web UI.** All of it. This exercise is the web UI.
+
+**Cleanup.** Nothing.
+
+---
+
+## Exercise 28 — Decommission the disk, and get the space back
+
+**The situation.** The disk you added in Exercise 21 has done its job — the drills are
+over, or in the real version, it has been flagged for replacement. Draining and removing
+it is routine. What it leaves behind is the lesson, and on this lab there is a second
+payoff: deleting its backing file is how you hand the space back to macOS.
 
 ### Removing
 
@@ -2457,12 +2582,16 @@ not.
 
 **In the web UI.** Ceph dashboard → Cluster → Hosts shows the new host and its daemons.
 
-**Cleanup.** The removal above is the cleanup. Confirm `HEALTH_OK`, 3 mons in quorum
+**Cleanup.** The removal above is the cleanup; run `fstrim /` after deleting `osd4.img`
+— that is the largest single reclaim in the guide, 12.4 GB measured here. Confirm
+`HEALTH_OK`, 3 mons in quorum
 and 3 OSDs up and in before moving on.
 
 ---
 
-## Exercise 28 — Recover a cluster that has filled up
+---
+
+## Exercise 29 — Recover a cluster that has filled up
 
 **The situation.** Someone uploads a large image, or a runaway job writes until there
 is no space left. Ceph stops accepting writes, Glance starts returning `502`, and
@@ -2590,9 +2719,17 @@ health panel shows the OSD_FULL error. The dashboard keeps working while the clu
 is full, which makes it a better vantage point than the OpenStack APIs during this
 incident.
 
-**Cleanup.** Delete every `big-image-*` and `/tmp/*.raw`. Confirm `HEALTH_OK` and
-sensible `MAX AVAIL` on every pool. On this lab the cluster came back to 24.13% and
-`HEALTH_OK` within a couple of minutes of the deletes.
+**Cleanup.**
+
+```bash
+OS image list -f value -c Name | grep '^big-image-' | xargs -r -n1 openstack image delete
+rm -f /tmp/*.raw
+fstrim /
+```
+
+Confirm `HEALTH_OK` and sensible `MAX AVAIL` on every pool. This is the largest cleanup
+in the guide and the one where skipping `fstrim` costs the most: the images were
+gigabytes, and without the trim the Mac keeps every byte of them.
 
 ---
 

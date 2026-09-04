@@ -23,7 +23,7 @@ That column is the answer to "which service owns this pool?" — the question yo
 first when a pool is filling up and you do not know who is writing to it.
 
 **Data Protection** reads `replica: ×3` on every row. That is the multiplier behind
-Exercise 24's arithmetic and Exercise 28's full cluster.
+Exercise 25's arithmetic and Exercise 29's full cluster.
 
 ## Step 2 — Where the dashboard and the CLI disagree
 

@@ -6,6 +6,85 @@ system containers, and OpenStack backed by Ceph RBD.
 > **Companion guide:** `openstack-ceph-lab-exercise.md` — day-2 exercises to run once
 > this is built (workloads, storage, networking, Ceph disk and node operations).
 
+## Contents
+
+- [Run it with the scripts](#run-it-with-the-scripts)
+  - [Getting in and out of the machine](#getting-in-and-out-of-the-machine)
+- [Credentials](#credentials)
+  - [Horizon and the OpenStack APIs](#horizon-and-the-openstack-apis)
+  - [Ceph dashboard](#ceph-dashboard)
+  - [S3 (Ceph RGW)](#s3-ceph-rgw)
+  - [Where the secrets live](#where-the-secrets-live)
+- [The four things that make this work](#the-four-things-that-make-this-work)
+- [Architecture](#architecture)
+- [Phase 0: Prerequisites](#phase-0-prerequisites)
+  - [0.1 zsh comments](#01-zsh-comments)
+  - [0.2 Verify the host](#02-verify-the-host)
+  - [0.3 Pick the Ceph version — it must match in three places](#03-pick-the-ceph-version--it-must-match-in-three-places)
+- [Phase 1: Kernel and machine](#phase-1-kernel-and-machine)
+  - [1.1 Clone and patch the kernel config — must precede everything](#11-clone-and-patch-the-kernel-config--must-precede-everything)
+  - [1.2 Build](#12-build)
+  - [1.3 Machine image](#13-machine-image)
+  - [1.4 Create the machine](#14-create-the-machine)
+- [Phase 2: LVM-backed OSD devices](#phase-2-lvm-backed-osd-devices)
+- [Phase 3: Incus and the Ceph nodes](#phase-3-incus-and-the-ceph-nodes)
+  - [3.1 Initialize Incus](#31-initialize-incus)
+  - [3.2 Pin the network — must precede launching containers](#32-pin-the-network--must-precede-launching-containers)
+  - [3.3 Build the node base image](#33-build-the-node-base-image)
+  - [3.4 Launch with static addresses](#34-launch-with-static-addresses)
+  - [3.5 Verify networking — ping does not work](#35-verify-networking--ping-does-not-work)
+  - [3.6 Pass through the device stack](#36-pass-through-the-device-stack)
+  - [3.7 Create device nodes and LVM symlinks](#37-create-device-nodes-and-lvm-symlinks)
+  - [3.8 Confirm the LV holds are running](#38-confirm-the-lv-holds-are-running)
+  - [3.9 Verify the mapping — do this before every OSD operation](#39-verify-the-mapping--do-this-before-every-osd-operation)
+  - [3.10 Make it survive restarts](#310-make-it-survive-restarts)
+  - [3.11 Verify node prerequisites](#311-verify-node-prerequisites)
+- [Phase 4: Ceph](#phase-4-ceph)
+  - [4.1 cephadm — runs inside ceph-node1, not on the VM](#41-cephadm--runs-inside-ceph-node1-not-on-the-vm)
+  - [4.2 Bootstrap](#42-bootstrap)
+  - [4.3 Add nodes 2 and 3](#43-add-nodes-2-and-3)
+  - [4.4 OSDs](#44-osds)
+  - [4.5 Pools and OpenStack key](#45-pools-and-openstack-key)
+  - [4.6 Configure and test the host Ceph client — do this before Phase 5](#46-configure-and-test-the-host-ceph-client--do-this-before-phase-5)
+- [Phase 5: OpenStack via Kolla-Ansible](#phase-5-openstack-via-kolla-ansible)
+  - [5.1 Network prerequisites — do these before anything else](#51-network-prerequisites--do-these-before-anything-else)
+  - [5.2 Create the deploy user and install](#52-create-the-deploy-user-and-install)
+  - [5.3 globals.yml](#53-globalsyml)
+  - [5.4 Ceph config and keyrings — watch the tabs](#54-ceph-config-and-keyrings--watch-the-tabs)
+  - [5.5 Inventory](#55-inventory)
+  - [5.6 Deploy](#56-deploy)
+  - [5.7 What this does and doesn't solve](#57-what-this-does-and-doesnt-solve)
+- [Phase 6: Verification](#phase-6-verification)
+  - [6.1 Services and hypervisor](#61-services-and-hypervisor)
+  - [6.2 Reaching the web UIs from macOS](#62-reaching-the-web-uis-from-macos)
+  - [6.3 What survives a restart](#63-what-survives-a-restart)
+  - [6.4 Upload an image](#64-upload-an-image)
+  - [6.5 Network access: security group, key, floating IP](#65-network-access-security-group-key-floating-ip)
+  - [6.6 Boot a real workload](#66-boot-a-real-workload)
+  - [6.7 Floating IP and the actual test](#67-floating-ip-and-the-actual-test)
+  - [6.8 Confirm the data is in Ceph](#68-confirm-the-data-is-in-ceph)
+- [Phase 7: Object storage (S3) via Ceph RGW](#phase-7-object-storage-s3-via-ceph-rgw)
+  - [7.2 Verify the endpoint](#72-verify-the-endpoint)
+  - [7.3 Create a user](#73-create-a-user)
+  - [7.4 Reach it from the VM and from macOS](#74-reach-it-from-the-vm-and-from-macos)
+  - [7.5 Confirm it landed in Ceph](#75-confirm-it-landed-in-ceph)
+- [Phase 8: Shared filesystem (CephFS) and an NFS export](#phase-8-shared-filesystem-cephfs-and-an-nfs-export)
+  - [8.1 Create the filesystem and the NFS cluster](#81-create-the-filesystem-and-the-nfs-cluster)
+  - [8.2 Export it, and install rpcbind](#82-export-it-and-install-rpcbind)
+  - [8.3 The kernel needs NFSv4.1, not just NFSv4](#83-the-kernel-needs-nfsv41-not-just-nfsv4)
+  - [8.4 Reach it from the VM and from macOS](#84-reach-it-from-the-vm-and-from-macos)
+  - [8.5 Confirm it landed in Ceph](#85-confirm-it-landed-in-ceph)
+- [Further work](#further-work)
+- [After a restart](#after-a-restart)
+  - [Container restart](#container-restart)
+  - [Machine restart (`container machine stop` / `run`)](#machine-restart-container-machine-stop--run)
+  - [Manual recovery](#manual-recovery)
+  - [Three traps worth knowing](#three-traps-worth-knowing)
+- [Reset](#reset)
+- [Disk usage on macOS](#disk-usage-on-macos)
+- [Failure lookup](#failure-lookup)
+
+---
 ## Run it with the scripts
 
 The whole lab is three scripts. The phase-by-phase text below is the reference for
@@ -2927,52 +3006,66 @@ From macOS: `container machine stop openstack-lab && container machine delete op
 
 ## Disk usage on macOS
 
-`container` accumulates far more than the lab needs and nothing prunes it on its own.
-This lab reached **129 GB** in `~/Library/Application Support/com.apple.container`
-with a single machine running, on a 460 GB disk that was 98% full:
+**Measured peak for a full run of all 29 exercises: 50.7 GB** in
+`~/Library/Application Support/com.apple.container`. Where it goes, and when:
 
-| Path | Size | What it was |
+| Point | Host store | Ceph raw used |
 |---|---|---|
-| `containers/buildkit/rootfs.ext4` | 42 GB | BuildKit cache, grown over repeated `container build` runs |
-| `snapshots/` | 57 GB | 24 orphaned image layers, ~3 GB each, from superseded builds |
-| `plugin-state/.../openstack-lab/rootfs.ext4` | 25 GB | the machine itself — real data |
-| `content/` | 5 GB | image content store |
+| after provisioning, no exercises | 29.4 GB | 2.4 GB of 21 |
+| through the load-balancer exercises | 39.3 GB | 8.2 GB |
+| through Exercise 28 | 48.4 GB | 9.6 GB |
+| Exercise 29 (fills the cluster on purpose) | **50.7 GB** | 19.0 GB |
 
-Only the machine's own rootfs was worth keeping. Reclaiming the rest:
+Two things follow from that table. **The floor is Kolla, not Ceph** — 29.4 GB is on disk
+before a single exercise runs, and almost all of it is OpenStack's container images.
+And **the OSDs are sized for Exercise 29, not for the other 28**: exercises 1-28 never
+exceed 9.7 GB of Ceph, so the rest of the allocation exists only so the fill exercise
+has something to fill.
+
+### The disk never shrinks by itself
+
+The machine's root is a sparse file that grows to its high-water mark. Apple's runtime
+mounts `/` before systemd, so there is no fstab entry to add `discard` to, and Ubuntu's
+`fstrim.timer` fires weekly — far too late for a lab built and torn down the same day.
+Deleting a file inside the guest frees the block for the guest and returns nothing to
+macOS until something trims.
 
 ```bash
-container builder stop
+container machine run -n openstack-lab --root -- lab-trim
+```
+
+A single `fstrim` after Exercise 28's decommission returned **12.4 GB** in one call.
+Every cleanup step in the exercise guide ends with one for this reason; `lab-trim` is
+the catch-all.
+
+`discard` as a mount option was tried and rejected: it makes every free a synchronous
+discard, and a machine stop afterwards hung for over seven hours instead of the usual
+five minutes.
+
+### What the settings are worth
+
+| Setting | Effect |
+|---|---|
+| `CEPH_POOL_SIZE=2` (not 3) | ~15 GiB usable from 21 GiB raw instead of ~7 |
+| `rbd_thin_provisioning = True` | the amphora stores 1.3 GiB instead of 2.8. Measured on a 1 GB file holding 100 MB: **1024 MiB stored vs 103 MiB** |
+| `OSD_SIZE` | a ceiling on how much host disk the lab can ever consume |
+| amphora build tree removed after upload | 1.1 GB of real blocks |
+
+### `container` accumulates its own
+
+Separately from the machine, `container` keeps a BuildKit cache and orphaned image
+layers that nothing prunes. This lab reached **129 GB** once, of which only the
+machine's own rootfs was worth keeping:
+
+```bash
 container builder delete --force     # drops the BuildKit cache
 container image prune -a             # drops unused images and their snapshots
 container system df                  # confirm
 ```
 
-That took the directory from **129 GB to 1.4 GB** and free space from 11 GB to 142 GB.
-Neither command touches a running machine; `image prune -a` will not remove the image a
-machine was created from.
-
-**BuildKit is the one that grows without bound.** It is a persistent container with its
-own 42 GB ext4 rootfs and no cache eviction, so every rebuild adds to it. Deleting it
-is free — the next `container build` starts a new one. `01-build-kernel.sh` and
-`02-build-image.sh` both delete it as their last step, which is why the leak does not
-come back.
-
-**Read the sizes with `du`, not `ls`.** A machine's `rootfs.ext4` is sparse:
-`openstack-lab` showed 513 GB apparent and 25 GB actual. `ls -lh` reports the apparent
-size and makes it look like the disk is already gone.
-
-A fully deployed lab costs roughly:
-
-| | |
-|---|---|
-| `/var/lib/docker` in the VM (Kolla images) | 47 GB |
-| `/var/lib/incus` (node containers and base image) | 9.7 GB |
-| `/var/lib/ceph-disks` (3 × 15 GB sparse, grows with use) | 1.3 GB initially |
-
-Budget about 90 GB of free space on the Mac for a full build, and keep an eye on
-`df -h /System/Volumes/Data` during the Kolla deploy — that is where most of it lands.
-
----
+That took the directory from 129 GB to 1.4 GB. `01-build-kernel.sh` and
+`02-build-image.sh` both delete the builder as their last step, so the leak does not
+accumulate across normal rebuilds.
 
 ## Failure lookup
 

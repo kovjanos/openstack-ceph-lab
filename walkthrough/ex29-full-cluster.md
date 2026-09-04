@@ -1,6 +1,6 @@
-# Exercise 28 — Recover a cluster that has filled up (web UI)
+# Exercise 29 — Recover a cluster that has filled up (web UI)
 
-Guide section: [Exercise 28](../openstack-ceph-lab-exercise.md#exercise-28--recover-a-cluster-that-has-filled-up)
+Guide section: [Exercise 29](../openstack-ceph-lab-exercise.md#exercise-29--recover-a-cluster-that-has-filled-up)
 
 A cluster at 95% stops accepting writes. The obvious fix — delete something — does not
 work, because deletes are writes. This is a genuine incident that happened while
@@ -10,7 +10,7 @@ building this lab.
 
 **Ceph dashboard → Overview.**
 
-![Ceph capacity overview](img/ex28-step01-ceph-capacity-overview.png)
+![Ceph capacity overview](img/ex29-step01-ceph-capacity-overview.png)
 
 The Capacity donut is raw usage against raw total. Two thresholds sit above it, neither
 of which appears on this page:
@@ -46,7 +46,7 @@ from 95.74% back to 3.82%.
 
 Two habits come out of it:
 
-- **Multiply by the replication factor** before you write anything large. Exercise 24
+- **Multiply by the replication factor** before you write anything large. Exercise 25
   is the arithmetic.
 - **Alert at `nearfull`, not at `full`.** Alertmanager already ships the rule
-  (Exercise 26); it just has nowhere to send it.
+  (Exercise 27); it just has nowhere to send it.

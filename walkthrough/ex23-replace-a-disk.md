@@ -1,8 +1,8 @@
-# Exercise 22 — Replace a failed disk properly (web UI)
+# Exercise 23 — Replace a failed disk properly (web UI)
 
-Guide section: [Exercise 22](../openstack-ceph-lab-exercise.md#exercise-22--replace-a-failed-disk-properly)
+Guide section: [Exercise 23](../openstack-ceph-lab-exercise.md#exercise-23--replace-a-failed-disk-properly)
 
-The disk from Exercise 21 is not coming back. Replacing it is a sequence, and doing it
+The disk from Exercise 22 is not coming back. Replacing it is a sequence, and doing it
 out of order is how you end up with a phantom OSD in the CRUSH map.
 
 **The dialogs below were opened and cancelled, not confirmed.** The exercise itself
@@ -14,7 +14,7 @@ do out of order.
 
 **Cluster → OSDs** → select the OSD → **Mark Out**.
 
-![Mark OSD out](img/ex22-step01-osd-mark-out-dialog.png)
+![Mark OSD out](img/ex23-step01-osd-mark-out-dialog.png)
 
 Marking out starts the rebalance: Ceph re-creates the third copy of everything that
 lived on this OSD, elsewhere. Wait for that to finish before going further.
@@ -22,7 +22,7 @@ lived on this OSD, elsewhere. Wait for that to finish before going further.
 ## Step 2 — The order the dashboard enforces
 
 Look back at the action bar in
-[Exercise 21](img/ex21-step01-ceph-osds-list.png): with the OSD still `in` and `up`,
+[Exercise 22](img/ex22-step01-ceph-osds-list.png): with the OSD still `in` and `up`,
 **Destroy** and **Purge** are greyed out. They only become available once the OSD is
 out and down.
 

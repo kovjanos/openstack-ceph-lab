@@ -1,6 +1,6 @@
-# Exercise 21 — Lose a disk while the service is running (web UI)
+# Exercise 22 — Lose a disk while the service is running (web UI)
 
-Guide section: [Exercise 21](../openstack-ceph-lab-exercise.md#exercise-21--lose-a-disk-while-the-service-is-running)
+Guide section: [Exercise 22](../openstack-ceph-lab-exercise.md#exercise-22--lose-a-disk-while-the-service-is-running)
 
 03:00, a disk fails, a third of your objects are degraded. The question at 09:00 is not
 "what broke" but "was anything down?" — and you want to have already watched the
@@ -12,7 +12,7 @@ Keep a workload running and a page open on it before you start.
 
 **Ceph dashboard → Cluster → OSDs.**
 
-![Ceph OSDs list with the action bar](img/ex21-step01-ceph-osds-list.png)
+![Ceph OSDs list with the action bar](img/ex22-step01-ceph-osds-list.png)
 
 Three OSDs, each `in` and `up`, each 15 GiB, each carrying 369 PGs and about 10% used.
 Selecting a row reveals the whole action bar, which is the vocabulary for this exercise
@@ -22,8 +22,8 @@ and the next one:
 - **Mark Down** — report it as unavailable
 - **Purge** / **Destroy** — remove it from the cluster, greyed out here because they
   only apply to an OSD that is already out and down
-- **Scrub** / **Deep Scrub** — Exercise 25
-- **Reweight** — Exercise 22
+- **Scrub** / **Deep Scrub** — Exercise 26
+- **Reweight** — Exercise 23
 
 ## Step 2 — Kill one and watch
 

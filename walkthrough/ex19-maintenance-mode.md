@@ -15,7 +15,7 @@ later when the node returns. That rebalance is pure waste.
 **Enter Maintenance** is the cephadm host operation: it stops the daemons on that host
 and sets the flags for you. Use it when you are taking the whole machine away.
 
-The other two entries matter for Exercise 27. **Start Drain** moves daemons off a host
+The other two entries matter for Exercise 28. **Start Drain** moves daemons off a host
 you intend to remove; **Remove** takes it out of the cluster.
 
 ## Step 2 — The flags themselves

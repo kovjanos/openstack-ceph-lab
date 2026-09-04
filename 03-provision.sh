@@ -87,6 +87,22 @@ RGW_VM_PORT=8100
 # does what has to happen after Glance is up.
 ENABLE_NETWORK_LOADBALANCER="${ENABLE_NETWORK_LOADBALANCER:-yes}"
 
+# Each OSD is a sparse file on the Mac's disk, so its size is a ceiling on how much
+# host disk the lab can ever consume -- the file grows to the high-water mark of what
+# Ceph writes and never shrinks.
+#
+# 7G is measured, not guessed. Exercises 1-28 peaked at 13.4 GB of OSD data across the
+# whole cluster, so three 7G disks sit at 64% -- clear of the 85% nearfull line with
+# room for a volume or two more. The rest of the size exists only so Exercise 29 has
+# something to fill, and filling it is what costs host disk: at 3x15G/size 3 the files
+# ended at 45 GB, at 3x10G/size 2 at 24 GB.
+OSD_SIZE="${OSD_SIZE:-7G}"
+
+# size 2, not 3. On a three-OSD lab this is the difference between ~10 GiB and ~15 GiB
+# usable, and the amphora image alone is 2.5 GiB stored -- 7.5 GiB at size 3 against
+# 5 GiB at size 2. Exercise 25 raises a pool to 3 to show what the third copy costs.
+CEPH_POOL_SIZE="${CEPH_POOL_SIZE:-2}"
+
 PHASES=(10-storage 20-incus 30-nodebase 40-nodes 50-ceph 60-hostclient 70-kolla 80-deploy 85-rgw 86-nfs 87-octavia 90-verify)
 
 # --- Plumbing ----------------------------------------------------------------
@@ -229,7 +245,7 @@ phase_10_storage() {
     mkdir -p /var/lib/ceph-disks
     for i in 1 2 3; do
         img=/var/lib/ceph-disks/osd$i.img
-        [ -f "$img" ] || { info "creating $img (15G sparse)"; truncate -s 15G "$img"; }
+        [ -f "$img" ] || { info "creating $img (${OSD_SIZE} sparse)"; truncate -s "$OSD_SIZE" "$img"; }
 
         # -j guards against a second attachment of the same image, which shows up
         # later as "Not using device /dev/loopN for PV".
@@ -528,6 +544,28 @@ phase_50_ceph() {
     wait_for 180 "3 hosts registered" bash -c \
         "[ \$(incus exec ceph-node1 -- cephadm shell -- ceph orch host ls 2>/dev/null | grep -c ceph-node) -ge 3 ]"
 
+    # Set discard BEFORE the OSDs exist, so every one of them starts with it on.
+    # BlueStore only discards blocks as it frees them -- turning this on afterwards
+    # does nothing for space already released, which is why it has to be here.
+    #
+    # It matters because each OSD is an LV on a loop device on a sparse file. Without
+    # discard those files only ever grow: Exercise 28 fills the cluster on purpose and
+    # they stay at 15G each afterwards, holding ~27 GB the cluster is no longer using.
+    # The whole chain carries discard (loop and dm both report
+    # discard_max_bytes=4294966784), so BlueStore's frees reach the file as hole
+    # punches and the image shrinks back.
+    # Set the default before any pool is created, so Kolla's glance/cinder/nova pools
+    # and the RGW/CephFS pools all come up at this size rather than needing a rebalance
+    # afterwards. min_size 1 keeps writes flowing while one OSD is down, which is the
+    # point of the failure drills.
+    ceph_do ceph config set global osd_pool_default_size     "$CEPH_POOL_SIZE" >/dev/null 2>&1 || true
+    ceph_do ceph config set global osd_pool_default_min_size 1 >/dev/null 2>&1 || true
+    info "default pool size set to $CEPH_POOL_SIZE before any pool exists"
+
+    ceph_do ceph config set osd bdev_enable_discard true >/dev/null 2>&1 || true
+    ceph_do ceph config set osd bdev_async_discard  true >/dev/null 2>&1 || true
+    info "BlueStore discard enabled before OSD creation"
+
     # One at a time, waiting for each. A tight loop can leave all three tagged
     # ceph.osd_id=0, colliding on the same ID with none registered.
     #
@@ -565,6 +603,16 @@ phase_50_ceph() {
             ceph_do rbd pool init "$pool" >/dev/null
             info "created pool $pool"
         }
+    done
+
+    # .mgr was created by bootstrap, before the default above was set, so it is still
+    # at the built-in size 3. Pull every existing pool to the configured size so
+    # 'ceph df' is consistent and nothing silently costs an extra copy.
+    for pool in $(ceph_do ceph osd pool ls 2>/dev/null); do
+        cur=$(ceph_do ceph osd pool get "$pool" size 2>/dev/null | awk '{print $2}')
+        [ "$cur" = "$CEPH_POOL_SIZE" ] && continue
+        ceph_do ceph osd pool set "$pool" size "$CEPH_POOL_SIZE" >/dev/null 2>&1 \
+            && info "pool $pool: size $cur -> $CEPH_POOL_SIZE"
     done
 
     # The user names matter. Kolla defaults to ceph_glance_user: glance and
@@ -853,6 +901,17 @@ auth_service_required = cephx
 auth_client_required = cephx
 EOF
     done
+    # Glance writes an image to RBD chunk by chunk and, by default, writes the zero
+    # chunks too. That matters here because the amphora image is a 2.6 GB raw disk
+    # image holding about 1 GB of files -- a 549 MB EFI partition with 192 KB in it,
+    # and a 2 GB root partition 60% used. Measured without this: glance-images at
+    # 2.8 GiB stored, 5.5 GiB used. Skipping the all-zero chunks stores what the
+    # image actually contains instead of its declared size.
+    cat > /etc/kolla/config/glance/glance-api.conf <<'EOF'
+[rbd]
+rbd_thin_provisioning = True
+EOF
+
     mkdir -p /etc/kolla/config/cinder/cinder-volume
     cat /etc/ceph/ceph.client.glance.keyring > /etc/kolla/config/glance/ceph.client.glance.keyring
     cat /etc/ceph/ceph.client.cinder.keyring > /etc/kolla/config/cinder/cinder-volume/ceph.client.cinder.keyring
@@ -1151,8 +1210,14 @@ phase_87_octavia() {
     # not one arm64. So it gets built here, from the Octavia source at the same
     # branch as the control plane: an amphora-agent newer than the API it reports
     # to is a version skew you discover at the first failover, not at boot.
-    if [ ! -f "$img" ]; then
-        info "building the amphora image -- about 10 minutes, the slowest step in the lab"
+    # Glance is the source of truth, not the local file. The build tree is deleted
+    # once the upload succeeds, so keying the rebuild on the raw file alone would make
+    # every re-run of this phase rebuild an image the cluster already has.
+    if oscli image show amphora >/dev/null 2>&1; then
+        info "amphora already in glance -- skipping the build"
+    elif [ ! -f "$img" ]; then
+        info "building the amphora image (a few minutes; 3 min and 11 min measured on\
+ two runs, it depends on how fast the Ubuntu mirror is)"
 
         # qemu-utils, debootstrap, kpartx, python3-venv, uuid-runtime, dosfstools and
         # git all come from the image. Check, do not install.
@@ -1214,6 +1279,24 @@ phase_87_octavia() {
             --property hw_firmware_type=uefi \
             --file "$img" >/dev/null || die "amphora image upload failed"
         info "amphora image uploaded to glance, owned by the service project"
+    fi
+
+    # Glance has the image now, so the local copy is dead weight -- and it is not
+    # small: 2.6 GB apparent, 1.1 GB of real blocks on the Mac's disk, which nothing
+    # else ever reclaims because the VM's filesystem is never trimmed automatically.
+    # The diskimage-builder work tree beside it is the same story.
+    if oscli image show amphora >/dev/null 2>&1; then
+        # everything the build needed and nothing after it: the raw image, the
+        # diskimage-builder work tree, the octavia checkout and the dib venv itself.
+        # All of it is recreated on demand if this phase is ever re-run.
+        rm -rf "$work"/*.raw "$work"/*.qcow2 "$work"/*.d "$src" "$dib" 2>/dev/null || true
+        rm -rf /var/lib/apt/lists/* /root/.cache/pip /tmp/dib_* 2>/dev/null || true
+        # Deleting inside the VM frees guest blocks but hands nothing back to macOS:
+        # the disk image is sparse and grows only. Trim right here, at the cleanup,
+        # rather than leaving it to fstrim.timer, which fires weekly and will never
+        # run inside the life of a lab that is built and torn down the same day.
+        fstrim / >/dev/null 2>&1 || true
+        info "removed the local amphora build tree and trimmed -- glance has the image"
     fi
 
     # Kolla's octavia-interface.service is ordered After=docker.service, but docker

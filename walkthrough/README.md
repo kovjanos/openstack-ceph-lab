@@ -61,31 +61,32 @@ inside instances (`10.0.0.x`) and floating IPs (`172.24.4.x`) will differ too.
 | 1 — Bootstrap the tenant | [ex01-bootstrap.md](ex01-bootstrap.md) | Horizon |
 | 2 — Build the lab's own image | [ex02-lab-image.md](ex02-lab-image.md) | Horizon |
 | 3 — A first workload | [ex03-first-workload.md](ex03-first-workload.md) | Horizon |
-| 4 — Persistent storage | [ex04-persistent-storage.md](ex04-persistent-storage.md) | Horizon + Ceph |
+| 4 — Persistent storage that outlives the instance | [ex04-persistent-storage.md](ex04-persistent-storage.md) | Horizon + Ceph |
 | 5 — Snapshot and restore | [ex05-snapshot-restore.md](ex05-snapshot-restore.md) | Horizon |
-| 6 — Grow a volume in use | [ex06-grow-volume.md](ex06-grow-volume.md) | Horizon |
-| 7 — Network isolation | [ex07-network-isolation.md](ex07-network-isolation.md) | Horizon |
-| 8 — Floating IP failover | [ex08-floating-ip-failover.md](ex08-floating-ip-failover.md) | Horizon |
-| 9 — One address, two servers † | [ex09-loadbalancer.md](ex09-loadbalancer.md) | Horizon |
-| 10 — Sticky sessions † | [ex10-sticky-sessions.md](ex10-sticky-sessions.md) | Horizon |
-| 11 — The load balancer died † | [ex11-lb-failover.md](ex11-lb-failover.md) | Horizon + CLI |
-| 12 — Shared filesystem | [ex12-shared-filesystem.md](ex12-shared-filesystem.md) | Ceph |
-| 13 — Object storage | [ex13-object-storage.md](ex13-object-storage.md) | Ceph |
-| 14 — Encryption at rest | [ex14-encrypted-volume.md](ex14-encrypted-volume.md) | Horizon |
-| 15 — Heat | [ex15-heat.md](ex15-heat.md) | Horizon |
-| 16 — Quotas | [ex16-quotas.md](ex16-quotas.md) | Horizon |
-| 17 — A second tenant | [ex17-second-tenant.md](ex17-second-tenant.md) | Horizon |
+| 6 — Grow a volume that is already in use | [ex06-grow-volume.md](ex06-grow-volume.md) | Horizon |
+| 7 — Network isolation between a frontend and a backend | [ex07-network-isolation.md](ex07-network-isolation.md) | Horizon |
+| 8 — Move a service between hosts with a floating IP | [ex08-floating-ip-failover.md](ex08-floating-ip-failover.md) | Horizon |
+| 9 — One address, two servers | [ex09-loadbalancer.md](ex09-loadbalancer.md) | Horizon |
+| 10 — The session that keeps logging out | [ex10-sticky-sessions.md](ex10-sticky-sessions.md) | Horizon |
+| 11 — The load balancer died | [ex11-lb-failover.md](ex11-lb-failover.md) | Horizon + CLI |
+| 12 — Two workloads sharing one filesystem | [ex12-shared-filesystem.md](ex12-shared-filesystem.md) | Ceph |
+| 13 — Object storage for a workload | [ex13-object-storage.md](ex13-object-storage.md) | Ceph |
+| 14 — Encryption at rest, with the key in Barbican | [ex14-encrypted-volume.md](ex14-encrypted-volume.md) | Horizon |
+| 15 — Build the same thing declaratively with Heat | [ex15-heat.md](ex15-heat.md) | Horizon |
+| 16 — Quotas, and the ticket that starts "I can't launch anything" | [ex16-quotas.md](ex16-quotas.md) | Horizon |
+| 17 — A second tenant, and proving they cannot see each other | [ex17-second-tenant.md](ex17-second-tenant.md) | Horizon |
 | 18 — RADOS underneath it all | [ex18-rados.md](ex18-rados.md) | Ceph |
 | 19 — Ceph maintenance mode | [ex19-maintenance-mode.md](ex19-maintenance-mode.md) | Ceph |
-| 20 — Restricted Ceph user | [ex20-restricted-ceph-user.md](ex20-restricted-ceph-user.md) | Ceph |
-| 21 — Lose a disk | [ex21-lose-a-disk.md](ex21-lose-a-disk.md) | Ceph |
-| 22 — Replace a disk | [ex22-replace-a-disk.md](ex22-replace-a-disk.md) | Ceph |
-| 23 — CephFS snapshots | [ex23-cephfs-snapshots.md](ex23-cephfs-snapshots.md) | Ceph |
-| 24 — What replication costs | [ex24-replication-cost.md](ex24-replication-cost.md) | Ceph |
-| 25 — Verify the data | [ex25-scrub.md](ex25-scrub.md) | Ceph |
-| 26 — The monitoring you have | [ex26-monitoring.md](ex26-monitoring.md) | Ceph + Grafana + Prometheus |
-| 27 — Add and remove a node | [ex27-add-remove-node.md](ex27-add-remove-node.md) | Ceph |
-| 28 — Recover a full cluster | [ex28-full-cluster.md](ex28-full-cluster.md) | Ceph |
+| 20 — Scoping credentials with a restricted Ceph user | [ex20-restricted-ceph-user.md](ex20-restricted-ceph-user.md) | Ceph |
+| 21 — Extend the cluster with another disk | [ex21-extend-cluster.md](ex21-extend-cluster.md) | Ceph |
+| 22 — Lose a disk while the service is running | [ex22-lose-a-disk.md](ex22-lose-a-disk.md) | Ceph |
+| 23 — Replace a failed disk properly | [ex23-replace-a-disk.md](ex23-replace-a-disk.md) | Ceph |
+| 24 — Filesystem snapshots that cost nothing | [ex24-cephfs-snapshots.md](ex24-cephfs-snapshots.md) | Ceph |
+| 25 — What replication actually costs you | [ex25-replication-cost.md](ex25-replication-cost.md) | Ceph |
+| 26 — Verify the data is really intact | [ex26-scrub.md](ex26-scrub.md) | Ceph + Grafana + Prometheus |
+| 27 — The monitoring you already have | [ex27-monitoring.md](ex27-monitoring.md) | Ceph |
+| 28 — Decommission the disk, and get the space back | [ex28-decommission.md](ex28-decommission.md) | Ceph |
+| 29 — Recover a cluster that has filled up | [ex29-full-cluster.md](ex29-full-cluster.md) | Ceph |
 
 † needs the load-balancer build, which is on by default. Built with
 `ENABLE_NETWORK_LOADBALANCER=no`? Add it with

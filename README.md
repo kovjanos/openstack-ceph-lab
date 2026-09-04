@@ -2,7 +2,7 @@
 
 A complete, restart-proof OpenStack cloud backed by a 3-node Ceph cluster, running
 inside a single Apple `container` machine on an M-series Mac. Three scripts build it;
-two guides explain it; 28 day-2 exercises give you something to do with it.
+two guides explain it; 29 day-2 exercises give you something to do with it.
 
 This is a lab, not a production reference. It is sized to fit on one laptop and every
 shortcut it takes is stated in the build guide.
@@ -93,8 +93,8 @@ want to open a workload in your own browser.
 | macOS | 26 |
 | Tooling | Apple [`container`](https://github.com/apple/container) CLI 1.3.1+ |
 | Memory | 26 GB to the machine by default; 24 GB works with `ENABLE_NETWORK_LOADBALANCER=no`, 32 GB on a 48 GB Mac |
-| Disk | ~90 GB free during the build |
-| Time | A few hours, nearly all of it pulling Kolla's container images |
+| Disk | ~55 GB free. Measured peak 50.7 GB on a full run of all 29 exercises |
+| Time | About 70 minutes end to end: 2 min kernel, 8 min image, 26 min provision, 34 min exercises |
 
 `MACHINE_CPUS` and `MACHINE_MEMORY` in `02-build-image.sh` set the machine's size.
 
@@ -159,7 +159,7 @@ one.
 | `03-provision.sh` | Runs in the VM. Eleven checkpointed phases from loop devices to a verified cloud. |
 | `sync-provision.sh` | Pushes an edited `03-provision.sh` into the machine without rebuilding the image. |
 | `openstack-ceph-lab-build.md` | The build guide: every phase, why it is done that way, and what breaks otherwise. |
-| `openstack-ceph-lab-exercise.md` | 28 day-2 exercises, each with a real incident behind it, CLI steps, the web-UI equivalent, and cleanup. |
+| `openstack-ceph-lab-exercise.md` | 29 day-2 exercises, each with a real incident behind it, CLI steps, the web-UI equivalent, and cleanup. |
 | `walkthrough/` | Screenshots of the web-UI side of every exercise, one Markdown file per exercise. |
 
 Both build scripts delete the BuildKit cache as their last step. That is not
@@ -180,7 +180,7 @@ with the day-2 situation it covers, so you know why you are doing it:
 | D. Load balancing † | one address two servers · sticky sessions · the load balancer died |
 | E. Shared storage | shared NFS · object storage |
 | F. Platform operations | encrypted volumes with Barbican · Heat · quotas · projects & RBAC |
-| G. Ceph day-2 | RADOS underneath it all · maintenance mode · restricted credentials · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · node add/remove |
+| G. Ceph day-2 | RADOS underneath it all · maintenance mode · restricted credentials · adding a disk · failure drill · disk replacement · CephFS snapshots · replication cost · scrub · monitoring · decommissioning a disk |
 | H. Recovery | recovering a cluster that has filled up |
 
 † Part D needs the load-balancer build, which is on by default — see below. Built
