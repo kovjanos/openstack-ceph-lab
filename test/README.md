@@ -29,6 +29,12 @@ total. A part prints `PASS`/`FAIL` per assertion and a banner at the end.
 | `exercises/part-G.sh` | 18–28: RADOS, maintenance, credentials, adding a disk, failure drills, snapshots, replication, scrub, monitoring, decommissioning |
 | `exercises/part-H.sh` | 29: filling the cluster and recovering from it |
 
+Then **stage 6** stops the machine and starts it again: `lab-down` inside the VM, a
+`container machine stop` that has to return on its own within five minutes, a check that
+nothing is left running, and a restart verified by `provision-lab.sh --only 90-verify` —
+which waits on Ceph, the keepalived VIP, keystone, nova-api and hypervisor registration.
+It is the only stage that asserts the lab survives being switched off.
+
 The parts are ordered and stateful — Part G expects what Part D-F left behind — so run
 them through `run-e2e.sh` rather than individually.
 
@@ -39,6 +45,7 @@ them through `run-e2e.sh` rather than individually.
 | `SKIP_BUILD` | `0` | `1` runs only the exercises, against a lab already up |
 | `OUT` | `test/results/<timestamp>` | where results go |
 | `MACHINE` | `openstack-lab` | container machine name |
+| `MACHINE_MEMORY` | `26G` | passed to `02-build-image.sh`; recorded in `CONFIG` and used to label the report's memory column |
 
 Provisioning knobs (`OSD_SIZE`, `CEPH_POOL_SIZE`, `ENABLE_NETWORK_LOADBALANCER`,
 `MACHINE_MEMORY`) belong to the lab scripts and are documented there; export them and

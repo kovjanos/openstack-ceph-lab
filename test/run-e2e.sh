@@ -26,6 +26,12 @@ stage() { echo "$*" > "$OUT/STAGE"; note "=== $*"; }
 START=$(date +%s)
 el() { local s=$(( $(date +%s) - START )); printf '%dh%02dm' $((s/3600)) $(((s%3600)/60)); }
 
+{ echo "MACHINE_MEMORY=${MACHINE_MEMORY:-26G}"
+  echo "MACHINE_CPUS=${MACHINE_CPUS:-8}"
+  echo "OSD_SIZE=${OSD_SIZE:-5G}"
+  echo "CEPH_POOL_SIZE=${CEPH_POOL_SIZE:-2}"
+  echo "ENABLE_NETWORK_LOADBALANCER=${ENABLE_NETWORK_LOADBALANCER:-yes}"
+} > "$OUT/CONFIG"
 note "results: $OUT"
 note "lab: $LAB   machine: $MACHINE"
 [ -d "$LAB/.git" ] && note "git: $(cd "$LAB" && git rev-parse --short HEAD 2>/dev/null)"
@@ -38,11 +44,11 @@ note "metrics collectors started"
 
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
   if [ "${SKIP_TEARDOWN:-0}" != 1 ]; then
-    stage "STAGE 1/5 teardown"
+    stage "STAGE 1/6 teardown"
     # Release the guests and the Incus containers first. A running Nova instance is
     # a nested QEMU scope the host cannot kill, and it is what makes the stop stall.
     # Bounded, and tolerant of a machine built before lab-down existed.
-    if container machine ls 2>/dev/null | awk -v m="$MACHINE" '$1==m{print $7}' | grep -q running; then
+    if container machine ls 2>/dev/null | grep "^$MACHINE " | grep -qw running; then
         ld=$(mktemp); ( container machine run -n "$MACHINE" --root -- \
                 /usr/local/sbin/lab-down.sh >"$ld" 2>&1 ) &
         lp=$!
@@ -74,7 +80,7 @@ if [ "${SKIP_BUILD:-0}" != 1 ]; then
   fi
 
   if [ "${SKIP_KERNEL:-0}" != 1 ]; then
-    stage "STAGE 2/5 kernel"
+    stage "STAGE 2/6 kernel"
     ( cd "$LAB" && ./01-build-kernel.sh ) >>"$LOG" 2>&1
     [ -s "$LAB/vmlinux-arm64" ] || { note "KERNEL FAILED"; echo "FAILED kernel" > "$OUT/STATUS"; exit 1; }
     note "kernel ok [$(el)]"
@@ -84,7 +90,7 @@ if [ "${SKIP_BUILD:-0}" != 1 ]; then
   fi
 
   if [ "${SKIP_IMAGE:-0}" != 1 ]; then
-    stage "STAGE 3/5 image"
+    stage "STAGE 3/6 image"
     ( cd "$LAB" && ./02-build-image.sh ) >>"$LOG" 2>&1
     rc=$?; [ $rc -eq 0 ] || { note "IMAGE FAILED rc=$rc"; echo "FAILED image rc=$rc" > "$OUT/STATUS"; exit 1; }
     note "image ok [$(el)]"
@@ -92,13 +98,13 @@ if [ "${SKIP_BUILD:-0}" != 1 ]; then
     note "SKIP_IMAGE: reusing the existing image and machine"
   fi
 
-    stage "STAGE 4/5 provision"
+    stage "STAGE 4/6 provision"
     container machine run -n "$MACHINE" --root -- /usr/local/sbin/provision-lab.sh >>"$LOG" 2>&1
     rc=$?; note "provision rc=$rc [$(el)]"
     [ $rc -eq 0 ] || { echo "FAILED provision rc=$rc" > "$OUT/STATUS"; exit 1; }
 fi
 
-stage "STAGE 5/5 exercises 1-29"
+stage "STAGE 5/6 exercises 1-29"
 : > "$OUT/SUMMARY"
 run_part() {
     local src="$1" label="$2"
@@ -118,6 +124,70 @@ run_part "$HERE/exercises/part-A-C.sh" "Parts A-C (1-8)"
 run_part "$HERE/exercises/part-D-F.sh" "Parts D-F (9-17)"
 run_part "$HERE/exercises/part-G.sh"   "Part G (18-28)"
 run_part "$HERE/exercises/part-H.sh"   "Part H (29)"
+
+stage "STAGE 6/6 graceful stop and restart"
+# Does the machine stop on its own once the lab is down, and does everything come
+# back? Both have failed before: a stop with a guest running either errors on
+# cgroup.kill or prints progress until the VM process is killed.
+rpass() { printf '  PASS  %s\n' "$*" | tee -a "$LOG"; }
+rfail() { printf '  FAIL  %s\n' "$*" | tee -a "$LOG"; }
+mline() { container machine ls 2>/dev/null | grep "^$MACHINE "; }
+
+t0=$(date +%s)
+container machine run -n "$MACHINE" --root -- /usr/local/sbin/lab-down.sh >>"$LOG" 2>&1
+ldrc=$?
+note "lab-down rc=$ldrc in $(( $(date +%s) - t0 ))s"
+[ $ldrc -eq 0 ] && rpass "lab-down completed" || rfail "lab-down rc=$ldrc"
+
+t0=$(date +%s)
+container machine stop "$MACHINE" >>"$LOG" 2>&1 &
+sp=$!
+for i in $(seq 1 60); do kill -0 $sp 2>/dev/null || break; sleep 5; done
+if kill -0 $sp 2>/dev/null; then
+    kill -9 $sp 2>/dev/null
+    vm=$(ps -Ao pid,comm | grep Virtualization.VirtualMachine | grep -v grep | awk '{print $1}' | head -1)
+    [ -n "$vm" ] && kill -9 "$vm" 2>/dev/null
+    sleep 8
+    rfail "stop did not return within 5 min -- killed the VM process"
+else
+    wait $sp; src=$?
+    secs=$(( $(date +%s) - t0 ))
+    note "stop returned rc=$src in ${secs}s"
+    [ $src -eq 0 ] && rpass "graceful stop returned on its own in ${secs}s" \
+                   || rfail "stop exited rc=$src after ${secs}s"
+fi
+
+st=$(mline); vmleft=$(ps -Ao pid,comm | grep Virtualization.VirtualMachine | grep -v grep | wc -l | tr -d ' ')
+note "after stop: ${st:-<no line>}   VM processes: $vmleft"
+echo "$st" | grep -qw stopped && rpass "machine reports stopped" || rfail "machine is not 'stopped' after the stop"
+[ "$vmleft" = 0 ] && rpass "no VM process left behind" || rfail "$vmleft VM process(es) still running"
+
+# Restart, and let 90-verify prove the services came back. It waits on Ceph, the
+# keepalived VIP, keystone, nova-api and hypervisor registration.
+t0=$(date +%s)
+container machine run -n "$MACHINE" --root -- \
+    /usr/local/sbin/provision-lab.sh --only 90-verify > "$OUT/restart-verify.out" 2>&1
+vrc=$?
+cat "$OUT/restart-verify.out" >> "$LOG"
+note "restart + 90-verify rc=$vrc in $(( $(date +%s) - t0 ))s"
+[ $vrc -eq 0 ] && rpass "machine restarted and 90-verify exited 0" || rfail "restart/verify rc=$vrc"
+
+# 90-verify does not exit non-zero for a sick service; it prints these instead.
+patt='GAVE UP|NOT healthy|NOT up|NOT answering|still no hypervisor'
+bad=$(grep -cE "$patt" "$OUT/restart-verify.out" 2>/dev/null)
+if [ "${bad:-0}" = 0 ]; then
+    rpass "no service reported a problem after restart"
+else
+    rfail "$bad service problem(s) after restart"
+    grep -E "$patt" "$OUT/restart-verify.out" | sed 's/^/      /' | tee -a "$LOG"
+fi
+
+h=$(container machine run -n "$MACHINE" --root -- \
+      bash -lc "incus exec ceph-node1 -- cephadm shell -- ceph health 2>/dev/null" 2>/dev/null \
+      | tr -d '\r' | grep -E 'HEALTH_' | head -1)
+note "ceph after restart: ${h:-<no answer>}"
+case "$h" in HEALTH_OK*) rpass "Ceph HEALTH_OK after restart";;
+             *)          rfail "Ceph after restart: ${h:-no answer}";; esac
 
 stage "COMPLETE"
 { echo "finished in $(el)"; echo; cat "$OUT/SUMMARY"; echo

@@ -41,6 +41,13 @@ def L(ep, key):
             except ValueError: return 0.0
     return 0.0
 
+MEM = "26G"
+try:
+    for line in (E/"CONFIG").read_text().splitlines():
+        if line.startswith("MACHINE_MEMORY="): MEM = line.split("=",1)[1].strip()
+except FileNotFoundError:
+    pass
+
 log = (E/"run.log").read_text(errors="ignore")
 marks = sorted((int(m.group(1)), m.group(2).strip()) for m in
                re.finditer(r'^--- \[[0-9:]+\|(\d+)\] (Ex\d+[^\n]*)', log, re.M))
@@ -53,7 +60,7 @@ for r in host:
         if cur is not None: steps.append((cur, start, int(r["epoch"])))
         cur, start = st, int(r["epoch"])
 steps.append((cur, start, int(host[-1]["epoch"])+1))
-steps = [s for s in steps if "5/5" not in s[0]]        # stage 5 is split by exercise
+steps = [s for s in steps if not ("5/6" in s[0] or "5/5" in s[0])]   # split by exercise
 for i, (ep, lab) in enumerate(marks):
     end = marks[i+1][0] if i+1 < len(marks) else int(host[-1]["epoch"])+1
     steps.append((lab, ep, end))
@@ -64,7 +71,7 @@ def gb(v):
     except (TypeError, ValueError): return 0.0
 
 print(f"{'step':<26}{'start':>9}{'dur':>8}{'host store':>14}{'VM img alloc':>15}{'VM fs used':>14}"
-      f"{'ceph used/alloc':>19}{'peak footprint':>16}{'peak rss':>10}{'peak guest/26G':>16}")
+      f"{'ceph used/alloc':>19}{'peak footprint':>16}{'peak rss':>10}{('peak guest/'+MEM):>16}")
 print("-"*133)
 for lab, a, b in steps:
     rs = rows_in(a, b)
@@ -97,4 +104,4 @@ print(f"{'PEAK / TOTAL':<26}{host[0]['ts']:>9}{total//60:>5}m{total%60:02d}s{max
 print("\n  all figures GB.  host store = what macOS allocated.  VM img alloc = rootfs.ext4 real blocks.")
 print("  VM fs used = df inside the guest.  ceph used/alloc = raw used vs raw capacity.")
 print("  peak footprint = macOS phys_footprint (Activity Monitor).  peak rss = ps RSS.")
-print("  peak guest/26G = memory in use inside the VM, against its 26 GB allocation.")
+print(f"  peak guest/{MEM} = memory in use inside the VM, against its {MEM} allocation.")
