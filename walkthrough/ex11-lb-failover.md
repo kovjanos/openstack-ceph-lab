@@ -85,9 +85,9 @@ Nobody ran a command.
 
 ## What it costs
 
-Two amphorae at 1 GB each, briefly three during a rebuild. Measured at the peak: **19.6
-GB used of 24 GB, 4.5 GB still available**, with two 512 MB backends and three amphorae
-alive at once.
+Two amphorae at 1 GB each, briefly three during a rebuild. Measured at the peak: **18.7
+GB used of 26 GB, 6.8 GB still available**, with two 512 MB backends and three amphorae
+alive at once. That is the most memory the lab ever uses.
 
 That is the price of the answer to "what happens when the load balancer dies", and it is
 why `octavia_loadbalancer_topology` is a setting rather than a default.

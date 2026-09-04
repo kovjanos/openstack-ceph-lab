@@ -153,15 +153,16 @@ re-run `lab-expose` rather than expecting it to stick.
 ## Resource budget — read this first
 
 The exercises are sized for a **26 GB machine**, which is the default in
-`02-build-image.sh`. That leaves roughly 13 GB for guests once Ceph, the OpenStack
-control plane and Octavia have taken their share, and Ceph gives roughly **7 GiB usable**
-from 15 GiB raw at `size = 2`.
+`02-build-image.sh`. Measured across a full run, the most the VM ever used was
+**18.7 GB**, during exercises 9-11 with the load balancer and both amphorae running —
+so 26 GB is right-sized rather than generous, and 24 GB has room too. Ceph gives roughly
+**7 GiB usable** from 15 GiB raw at `size = 2`.
 
 | | |
 |---|---|
 | Lab guest | 512 MB RAM, 248 MB image — every workload exercise uses the same one |
 | Concurrent guests | 3-4 on a 26 GB machine, more on 28-32 GB |
-| 24 GB machine | Works, but build with `ENABLE_NETWORK_LOADBALANCER=no` and skip exercises 9–11 |
+| 24 GB machine | Works, load balancer included. Peak use inside the VM was 18.7 GB, measured during exercises 9-11 with both amphorae up, so 24 GB leaves about 5 GB spare |
 
 **512 MB is a hard floor for any guest.** Below it, aarch64 UEFI GRUB fails with
 `error: out of memory` before Linux starts, and the console's next line —
@@ -180,8 +181,8 @@ later one uses it; the rest should be torn down or you will run out of memory.
 
 The exercises are ordered so that state built once is reused, rather than rebooting
 instances for each. Peak cost is two guests (1 GB), or three guests plus two amphorae
-(3 GB) across the load-balancing part — both fit the default 26 GB machine, and in fact
-fit 24 GB with less room to spare.
+(3 GB) across the load-balancing part. Measured peak use inside the VM across a whole
+run was 18.7 GB, so both fit the default 26 GB machine and both fit 24 GB.
 
 | Part | Exercises | Running | Needs |
 |---|---|---|---|
@@ -196,17 +197,20 @@ fit 24 GB with less room to spare.
 
 **Part D needs the load-balancer build, which is on by default.** The four Octavia
 containers cost 1.4 GB all the time — ordinary here, where `neutron_server` alone is
-0.9 GB — and the two amphorae cost 2 GB more, but only while Part D is running. Peak
-observed, with a load balancer, two backends and three amphorae briefly alive during a
-rebuild, was 19.9 GB.
+0.9 GB — and the two amphorae cost 2 GB more, but only while Part D is running. Measured
+peak inside the VM across a full run was **18.7 GB**, reached during Part D with both
+amphorae up.
 
-That is why `02-build-image.sh` defaults to **26 GB**. The same run fits in 24 GB with
-4.2 GB spare, which works but leaves little for anything else.
+`02-build-image.sh` defaults to **26 GB**, which leaves about 7 GB clear of that peak.
+**24 GB also works, load balancer included**, with roughly 5 GB spare. The extra 2 GB
+buys tolerance for a slow amphora boot or a rebuild that briefly runs three of them, not
+headroom the exercises actually need.
 
-**To run on 24 GB**, build with `ENABLE_NETWORK_LOADBALANCER=no`. Everything except
-exercises 9–11 works unchanged, and the end of Exercise 9 still teaches round-robin and
-sticky sessions using HAProxy in a guest, for one extra instance. What it cannot teach
-is Exercise 11.
+**If you would rather not run Octavia**, build with `ENABLE_NETWORK_LOADBALANCER=no`,
+which frees the 1.4 GB its four containers hold permanently. Everything except exercises
+9–11 works unchanged, and the end of Exercise 9 still teaches round-robin and sticky
+sessions using HAProxy in a guest, for one extra instance. What it cannot teach is
+Exercise 11.
 
 Changing `MACHINE_MEMORY` recreates the machine, so decide before you build the lab
 rather than after.
@@ -1193,12 +1197,12 @@ throughout — worth reading carefully, because they answer different questions:
 
 ### What it costs
 
-Two amphorae at 1 GB each, and briefly three during a rebuild. Measured on this lab at
-the peak: **19.6 GB used, 4.5 GB still available on a 24 GB machine**, with two 512 MB
-backends and three amphorae alive at once. On the default 26 GB there is correspondingly
-more room. That is the price of the answer to "what happens when the
-load balancer dies", and it is why `octavia_loadbalancer_topology` is a setting rather
-than a default.
+Two amphorae at 1 GB each, and briefly three during a rebuild. This is the high-water
+mark for the whole lab: **18.7 GB used, 6.8 GB still available on the 26 GB machine**,
+with two 512 MB backends and three amphorae alive at once. Nothing in Parts E through H
+comes near it. That is the price of the answer to "what happens when the load balancer
+dies", and it is why `octavia_loadbalancer_topology` is a setting rather than a
+default.
 
 **In the web UI.** Horizon shows the load balancer's status but not the amphorae behind
 it — they live in Octavia's own service project. `openstack loadbalancer amphora list`

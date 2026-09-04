@@ -92,7 +92,7 @@ want to open a workload in your own browser.
 | Hardware | Apple Silicon M3 or later |
 | macOS | 26 |
 | Tooling | Apple [`container`](https://github.com/apple/container) CLI 1.3.1+ |
-| Memory | 26 GB to the machine by default, and it is not oversized: measured peak inside the VM was 18.7 GB, during the load-balancer exercises; 24 GB works with `ENABLE_NETWORK_LOADBALANCER=no`, 32 GB on a 48 GB Mac |
+| Memory | 26 GB by default. Measured peak inside the VM was 18.7 GB, with the load balancer running. 24 GB also works — tighter, but 5 GB clear of that peak. 32 GB if your Mac has 48 |
 | Disk | ~50 GB free. Measured peak 44.7 GB across a full run of all 29 exercises |
 | Time | 1h40m end to end on a clean run: 11 min kernel, 21 min image, 33 min provision, 34 min exercises. The build stages track how fast `ports.ubuntu.com` is on the day |
 
@@ -118,18 +118,21 @@ accommodate it.** The four Octavia containers cost 1.4 GB all the time — ordin
 where `neutron_server` alone is 0.9 GB — and the two amphorae cost 2 GB more, but only
 while exercises 9–11 are running.
 
-It runs on 24 GB: measured peak was 19.9 GB, leaving 4.2 GB. That works, but it is thin
-if anything else on the machine is busy, so 26 GB is the default rather than the
-minimum.
+**It runs on 24 GB with the load balancer included.** Measured across a full run, the
+most the VM ever used was 18.7 GB, and that peak was during exercises 9-11 with both
+amphorae up — so 24 GB leaves about 5 GB spare. 26 GB is the default because spare
+memory is what absorbs a slow amphora boot or a rebuild that briefly runs three, not
+because 24 will not do.
 
-**If you need to run on 24 GB**, build without it:
+**If you would rather not run Octavia at all**, build without it:
 
 ```bash
 ENABLE_NETWORK_LOADBALANCER=no provision-lab
 ```
 
-Everything except exercises 9–11 is unchanged, and Exercise 9 still teaches round-robin
-and sticky sessions using HAProxy in a guest.
+That frees the 1.4 GB the four Octavia containers hold permanently. Everything except
+exercises 9–11 is unchanged, and Exercise 9 still teaches round-robin and sticky
+sessions using HAProxy in a guest.
 
 It costs one-off resources too: a few minutes to build the amphora image, and 2.7 GiB
 of the 15 GiB Ceph cluster once it is in Glance. The image is a 2.6 GB raw disk holding

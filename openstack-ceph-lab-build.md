@@ -3061,8 +3061,8 @@ are too small to survive being filled.
 
 Memory, measured the same way: the VM's `phys_footprint` sits at its full 26 GB
 allocation, but **peak use inside the guest was 18.7 GB**, during the load-balancer
-exercises. 26 GB is right-sized rather than generous; 24 GB would work and leave little
-margin.
+exercises. 26 GB is right-sized rather than generous, and 24 GB would work too — the
+peak leaves about 5 GB clear of it.
 
 ### The disk never shrinks by itself
 
