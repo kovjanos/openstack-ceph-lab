@@ -32,8 +32,14 @@ for n in $(seq 1 24); do
   OS image create big-image-$n --file "$src" --disk-format raw \
      --container-format bare >/dev/null 2>&1
   p=$(pct)
-  # stop as soon as the cluster refuses, no need to upload all four
   echo "$p" | awk '{exit !($1+0 >= 96)}' && { echo "  cluster at $p% -- stopping"; break; }
+  # once the cluster stops accepting writes the uploads fail silently and the
+  # percentage stops moving; two flat readings mean full, not slow
+  if [ "$p" = "${last:-}" ]; then
+    flat=$((${flat:-0} + 1))
+    [ "$flat" -ge 2 ] && { echo "  cluster stopped accepting writes at $p% -- stopping"; break; }
+  else flat=0; fi
+  last=$p
 done
 
 echo "  now at $(pct)% raw used, osd files $(imgs)"
@@ -54,10 +60,13 @@ echo "  trying to delete $IMG while the cluster is full"
 out=$(timeout 90 sudo -u kolla bash -lc '. /opt/kolla/venv/bin/activate && OS_CLIENT_CONFIG_FILE=/etc/kolla/clouds.yaml OS_CLOUD=kolla-admin openstack image delete '"$IMG" 2>&1 | tail -2)
 echo "    ${out:-<no output>}"
 sleep 10
-if OS image show "$IMG" >/dev/null 2>&1; then
-  pass "delete did NOT free the image -- this is the deadlock the exercise is about"
+# Do not ask glance whether the image survived: glance is down, which is the whole
+# point. Ask rbd, which talks to the cluster directly.
+RBDLS="rbd -n client.glance --keyring /etc/ceph/ceph.client.glance.keyring ls glance-images"
+if $RBDLS 2>/dev/null | grep -q .; then
+  pass "images still in the pool after the delete -- this is the deadlock the exercise is about"
 else
-  echo "    (delete went through -- the cluster was not full enough to block writes)"
+  echo "    (pool is empty -- the delete completed, so the cluster was not blocking writes)"
 fi
 
 step "Ex29 the way out -- raise full_ratio, delete, put it back"
@@ -75,6 +84,9 @@ C ceph osd set-full-ratio 0.95 2>&1 | sed 's/^/    /'
 sleep 15
 for i in $(seq 1 40); do C ceph health | grep -q HEALTH_OK && break; sleep 10; done
 C ceph health | head -1 | sed 's/^/    /'
+down=$(C ceph -s 2>/dev/null | grep -oE '[0-9]+ osds: [0-9]+ up' | awk '{print ($2+0)-($4+0)}')
+[ "${down:-0}" -gt 0 ] && fail "an OSD did not survive the fill (bluefs enospc kills OSDs that are too small)" \
+                       || pass "every OSD survived the fill"
 C ceph health | grep -q HEALTH_OK && pass "cluster recovered to HEALTH_OK" \
   || fail "still not healthy: $(C ceph health | head -1)"
 C ceph df | grep -E 'TOTAL' | sed 's/^/    /'

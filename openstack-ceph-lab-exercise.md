@@ -2614,6 +2614,14 @@ long outage into a five-minute one.
 
 > Do this exercise last. It disrupts everything else, and its cleanup is the teardown.
 
+> **Do not shrink the OSDs to make this quicker.** The lab's disk size is set by this
+> exercise, not by the other twenty-eight. Filling a small OSD does not just fill it: at
+> about 93% a 5 GB OSD has ~250 MB left, which is too little for RocksDB to compact, and
+> BlueFS aborts with `bluefs enospc`. The OSD then cannot restart, because recovery
+> needs to write too. Measured on this lab — the cluster lost a disk permanently and
+> `full_ratio` at 0.95 did not prevent it, because BlueFS starves before the data area
+> does.
+
 ### Fill it up
 
 The lab cluster is 15 GiB raw, so roughly 7 GiB usable at `size = 2`. Raw images will

@@ -1091,13 +1091,23 @@ it builds through `apple/containerization`'s own Makefile and Dockerfile, so its
 behaviour is theirs, not this repo's. If the kernel stage sits on a `Get:` line, it is
 waiting on the mirror and will recover on apt's internal 120-second timeout.
 
-Before assuming a hang, check that the log is still growing:
+**A static log is not the same as a stalled build.** apt prints a line when a package
+*starts*, not while it downloads, so a large package on a slow link produces no output
+at all for minutes. `libllvm20` is about 130 MB; at 600 KB/s that is nearly four minutes
+of silence with the download running perfectly.
+
+Check the network, not the log:
 
 ```bash
-wc -c build.log; sleep 60; wc -c build.log
+iface=$(route -n get default | awk '/interface:/{print $2}')
+a=$(netstat -ib | awk -v i="$iface" '$1==i && $7 ~ /^[0-9]+$/ {print $7; exit}')
+sleep 30
+b=$(netstat -ib | awk -v i="$iface" '$1==i && $7 ~ /^[0-9]+$/ {print $7; exit}')
+echo "$(( (b-a)/30/1024 )) KB/s"
 ```
 
-A stage that is genuinely stuck produces no new bytes at all over a minute.
+Tens of KB/s or more means it is working. Near zero for a minute, with the log also
+static, is a genuine hang.
 
 ## Phase 2: LVM-backed OSD devices
 

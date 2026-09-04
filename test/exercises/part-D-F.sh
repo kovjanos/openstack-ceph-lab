@@ -134,8 +134,18 @@ OS loadbalancer amphora list -f value -c status 2>/dev/null | grep -qE 'BOOTING|
 # backends go before Part E. Skipping it leaves six instances running into Exercise 12
 # -- two amphorae, two lb-web and the two it is about to create -- and on a small
 # cluster nova then refuses with "No valid host was found" for want of schedulable disk.
-OS loadbalancer delete lb1 --cascade >/dev/null 2>&1
-for i in $(seq 1 40); do OS loadbalancer show lb1 >/dev/null 2>&1 || break; sleep 6; done
+#
+# Wait for ACTIVE first. Exercise 11 kills an amphora, so Octavia is still rebuilding
+# the pair when this runs, and a delete against a PENDING_UPDATE load balancer is
+# refused with a 409 that is easy to miss if stderr is thrown away.
+lbwait || echo "    lb1 did not settle before delete; trying anyway"
+for attempt in 1 2 3; do
+  out=$(OS loadbalancer delete lb1 --cascade 2>&1)
+  [ -n "$out" ] && echo "    delete attempt $attempt: $(echo "$out" | head -1 | cut -c1-90)"
+  for i in $(seq 1 40); do OS loadbalancer show lb1 >/dev/null 2>&1 || break; sleep 6; done
+  OS loadbalancer show lb1 >/dev/null 2>&1 || break
+  lbwait || true
+done
 OS server delete lb-web1 lb-web2 >/dev/null 2>&1
 for i in $(seq 1 30); do
   n=$(OS server list -f value -c Name 2>/dev/null | grep -c '^lb-web')
@@ -144,7 +154,7 @@ done
 OS loadbalancer list -f value -c name 2>/dev/null | grep -q lb1 \
   && fail "lb1 still present going into Part E" || pass "load balancer and backends removed before Part E"
 fstrim / >/dev/null 2>&1 || true
-echo "    instances now: $(OS server list -f value -c Name 2>/dev/null | tr '\n' ' ')"
+echo "    instances now: $(OS server list --all-projects -f value -c Name 2>/dev/null | tr '\n' ' ')"
 
 ########## Exercise 12 -- two workloads sharing one filesystem
 step "Ex12 shared filesystem over NFS"

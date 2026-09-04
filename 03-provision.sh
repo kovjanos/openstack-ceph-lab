@@ -91,12 +91,18 @@ ENABLE_NETWORK_LOADBALANCER="${ENABLE_NETWORK_LOADBALANCER:-yes}"
 # host disk the lab can ever consume -- the file grows to the high-water mark of what
 # Ceph writes and never shrinks.
 #
-# 5G is measured, not guessed. With thin provisioning and size 2, exercises 1-28 peaked
-# at 9.7 GB of Ceph across the whole cluster, so three 5G disks sit at 65% -- clear of
-# the 85% nearfull line with room for a volume or two more. The rest of the size exists only so Exercise 29 has
+# The size is set by Exercise 29, not by the other 28. With thin provisioning at size 2
+# the exercises peak at about 9.7 GB across the cluster, which three 5G disks hold
+# comfortably at 54%. But Exercise 29 fills the cluster on purpose, and a 5G OSD taken
+# to 93% has roughly 250 MB left -- not enough for RocksDB to compact. Measured: BlueFS
+# aborts with "bluefs enospc", the OSD cannot restart because recovery also needs to
+# write, and the cluster loses a disk permanently.
+#
+# full_ratio at 0.95 does not save you: BlueFS starves before the data area is full.
+# 10G leaves about 500 MB at the same point and has completed a full run. The rest of the size exists only so Exercise 29 has
 # something to fill, and filling it is what costs host disk: at 3x15G/size 3 the files
 # ended at 45 GB, at 3x10G/size 2 at 24 GB.
-OSD_SIZE="${OSD_SIZE:-5G}"
+OSD_SIZE="${OSD_SIZE:-10G}"
 
 # size 2, not 3. On a three-OSD lab this is the difference between ~10 GiB and ~15 GiB
 # usable, and the amphora image alone is 2.5 GiB stored -- 7.5 GiB at size 3 against
