@@ -21,7 +21,7 @@ Performance** tab has the Grafana panels for throughput per pool.
 ## Step 2 — The arithmetic
 
 ```
-TOTAL           45 GiB   40 GiB avail
+TOTAL           15 GiB   12 GiB avail
 cinder-volumes  55 MiB stored   160 MiB used   MAX AVAIL 13 GiB
 ```
 
@@ -31,7 +31,7 @@ Three numbers matter:
 - **used** — what it occupies after replication, roughly 3×
 - **MAX AVAIL** — what you can still write
 
-On a 45 GiB cluster at `size = 3` you have about 13 GiB of usable space, not 45.
+On a 15 GiB cluster at `size = 2` you have about 7 GiB of usable space, not 15.
 
 Drop `cinder-volumes` to `size 2` and the same data occupies 106 MiB instead of 160
 MiB, with MAX AVAIL rising from 13 GiB to 19 GiB. **Put it back.** `size = 2` means one
@@ -39,6 +39,6 @@ disk failure leaves a single copy and no redundancy at all while it recovers.
 
 ## Why this matters two exercises later
 
-An image is charged at `size × replication`. A 3.5 GB distro image costs 10.5 GB of a
-45 GiB cluster — which is how Exercise 29's cluster fills up, and why this lab builds a
+An image is charged at `size × replication`. A 3.5 GB distro image costs 7 GiB of a
+15 GiB cluster — which is how Exercise 29's cluster fills up, and why this lab builds a
 248 MB image instead.

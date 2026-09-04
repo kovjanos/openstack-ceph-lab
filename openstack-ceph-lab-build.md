@@ -26,6 +26,7 @@ system containers, and OpenStack backed by Ceph RBD.
   - [1.2 Build](#12-build)
   - [1.3 Machine image](#13-machine-image)
   - [1.4 Create the machine](#14-create-the-machine)
+  - [If a build stage seems to hang](#if-a-build-stage-seems-to-hang)
 - [Phase 2: LVM-backed OSD devices](#phase-2-lvm-backed-osd-devices)
 - [Phase 3: Incus and the Ceph nodes](#phase-3-incus-and-the-ceph-nodes)
   - [3.1 Initialize Incus](#31-initialize-incus)
@@ -82,6 +83,9 @@ system containers, and OpenStack backed by Ceph RBD.
   - [Three traps worth knowing](#three-traps-worth-knowing)
 - [Reset](#reset)
 - [Disk usage on macOS](#disk-usage-on-macos)
+  - [The disk never shrinks by itself](#the-disk-never-shrinks-by-itself)
+  - [What the settings are worth](#what-the-settings-are-worth)
+  - [`container` accumulates its own](#container-accumulates-its-own)
 - [Failure lookup](#failure-lookup)
 
 ---
@@ -1073,6 +1077,28 @@ rebuild and a full redeploy.
 
 ---
 
+### If a build stage seems to hang
+
+Both build stages fetch hundreds of packages from `ports.ubuntu.com`, and that mirror
+sometimes accepts a connection and then goes quiet. Symptom: the log stops on a single
+`Get:` line for minutes while the machine is otherwise idle. Measured on one run, a
+single package stalled for four minutes and the image build took 21 minutes instead of
+the usual eight.
+
+`02-build-image.sh` sets `Acquire::http::Timeout "30"` and `Acquire::Retries "3"` so apt
+gives up on a dead connection quickly. The kernel stage has no such setting available:
+it builds through `apple/containerization`'s own Makefile and Dockerfile, so its apt
+behaviour is theirs, not this repo's. If the kernel stage sits on a `Get:` line, it is
+waiting on the mirror and will recover on apt's internal 120-second timeout.
+
+Before assuming a hang, check that the log is still growing:
+
+```bash
+wc -c build.log; sleep 60; wc -c build.log
+```
+
+A stage that is genuinely stuck produces no new bytes at all over a minute.
+
 ## Phase 2: LVM-backed OSD devices
 
 Loop devices alone are rejected. The LV on top is what makes them acceptable.
@@ -1583,7 +1609,7 @@ sudo incus exec ceph-node1 -- cephadm shell -- ceph osd tree
 sudo incus exec ceph-node1 -- cephadm shell -- ceph status
 ```
 
-Target state: 3 mons in quorum, 3 OSDs up and in, ~45 GiB avail, `HEALTH_OK`.
+Target state: 3 mons in quorum, 3 OSDs up and in, ~15 GiB raw, `HEALTH_OK`.
 
 #### Recovering from a failed OSD attempt
 

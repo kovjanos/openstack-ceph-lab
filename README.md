@@ -131,8 +131,10 @@ ENABLE_NETWORK_LOADBALANCER=no provision-lab
 Everything except exercises 9–11 is unchanged, and Exercise 9 still teaches round-robin
 and sticky sessions using HAProxy in a guest.
 
-It costs one-off resources too: about 3 minutes to build the amphora image, and 7.5 GiB
-of the 15 GiB Ceph cluster once it is in Glance (2.5 GiB raw, charged at `size = 3`).
+It costs one-off resources too: a few minutes to build the amphora image, and 2.7 GiB
+of the 15 GiB Ceph cluster once it is in Glance. The image is a 2.6 GB raw disk holding
+about 1 GB of files; `rbd_thin_provisioning` means Glance stores what it contains rather
+than its declared size, so it lands as 1.3 GiB stored, charged at `size = 2`.
 
 The service behind it is OpenStack's Octavia, which is what the settings and error
 messages say; the flag names the capability so you do not have to know that first.

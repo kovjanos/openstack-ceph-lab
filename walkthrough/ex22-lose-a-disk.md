@@ -33,11 +33,13 @@ Stop the daemon from the CLI (`ceph orch daemon stop osd.1`) and keep this page 
 ```
 health: HEALTH_WARN
 osd: 3 osds: 2 up (since 35s), 3 in
-pgs: 646/1938 objects degraded (33.333%)
+pgs: 247/2788 objects degraded (8.859%)
 ```
 
-**Read that number.** With `size = 3`, losing one of three OSDs degrades exactly one
-third of the replicas — 33.333% — and loses precisely nothing. Two copies of every
+**Read that number.** At `size = 2`, every object on the failed disk drops to a single
+copy. The percentage is how much of the cluster's data lived there — 8.859% here,
+because this is the added 5 GB disk from Exercise 21 rather than one of the originals.
+Nothing is lost: the other copy of every
 object are still online.
 
 ## Step 3 — Confirm nothing was down

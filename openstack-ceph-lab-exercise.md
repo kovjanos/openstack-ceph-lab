@@ -154,8 +154,8 @@ re-run `lab-expose` rather than expecting it to stick.
 
 The exercises are sized for a **26 GB machine**, which is the default in
 `02-build-image.sh`. That leaves roughly 13 GB for guests once Ceph, the OpenStack
-control plane and Octavia have taken their share, and Ceph gives **14 GiB usable** after
-3× replication.
+control plane and Octavia have taken their share, and Ceph gives roughly **7 GiB usable**
+from 15 GiB raw at `size = 2`.
 
 | | |
 |---|---|
@@ -356,11 +356,15 @@ OS image create lab-workload --file /tmp/lab-workload.raw --disk-format raw \
   --container-format bare --public --property hw_firmware_type=uefi
 ```
 
-**Mind the capacity.** Glance stores raw images **unsparsed**, and Ceph replicates
-three times, so an image costs `size × 3` of raw cluster space. This 248 MB image costs
-744 MB, while a 3.5 GB distro image would cost 10.5 GB — a quarter of a 45 GiB cluster
-for one image. That is the whole reason to build a small one. Check before uploading
-anything large:
+**Mind the capacity.** Ceph keeps two copies here, so an image costs `size × 2` of raw
+cluster space. This 248 MB image costs about 496 MB, while a 3.5 GB distro image would
+cost 7 GB — nearly half a 15 GiB cluster for one image. That is the whole reason to
+build a small one.
+
+Glance is configured with `rbd_thin_provisioning`, so it stores what an image actually
+contains rather than its declared size; a mostly-empty 3.5 GB file costs far less than
+a full one. Do not rely on that for a real distro image, which is mostly not empty.
+Check before uploading anything large:
 
 ```bash
 incus exec ceph-node1 -- cephadm shell -- ceph df
@@ -2059,12 +2063,18 @@ Within about 35 seconds:
 ```
 health: HEALTH_WARN
 osd: 3 osds: 2 up (since 35s), 3 in
-pgs: 646/1938 objects degraded (33.333%)
+pgs: 247/2788 objects degraded (8.859%), 28 pgs degraded
 ```
 
-**Read that number.** With `size = 3`, losing one OSD degrades exactly one third of
-the replicas — 33.333% — and loses precisely nothing. Two copies of every object are
-still online.
+**Read that number.** Measured here: `247/2788 objects degraded (8.859%)`. At
+`size = 2` every object on the failed disk drops to a single copy, and the percentage is
+simply how much of the cluster's data happened to live there — this is the 5 GB disk you
+added in Exercise 21, alongside three 5 GB originals, so it carried roughly a quarter of
+the data and about a third of that was degraded.
+
+Nothing was lost. Every degraded object still has its other copy online, which is why
+the workload below never notices. What you have lost is *redundancy*: until recovery
+finishes, a second failure would take data with it.
 
 Now the part that matters:
 
@@ -2606,22 +2616,26 @@ long outage into a five-minute one.
 
 ### Fill it up
 
-The lab cluster is 45 GiB raw, so roughly 14 GiB usable at `size = 3`. A large raw
-image will do it — Glance stores raw images **unsparsed**, so each one costs its full
-size times the replication factor:
+The lab cluster is 15 GiB raw, so roughly 7 GiB usable at `size = 2`. Raw images will
+do it, uploaded repeatedly under different names:
 
 ```bash
 cd /tmp
-dd if=/dev/urandom of=big.raw bs=1M count=3500      # 3.5 GB of incompressible data
-OS image create big-image --file /tmp/big.raw --disk-format raw --container-format bare
+dd if=/dev/urandom of=big.raw bs=1M count=1000      # 1 GB of incompressible data
+OS image create big-image-1 --file /tmp/big.raw --disk-format raw --container-format bare
 ```
+
+**Use 1 GB images, not one large one.** At `size = 2` a 1 GB image costs 2 GiB of raw
+cluster, about 13% of the total — small enough to walk up to the limit in steps. A
+3.5 GB image costs 7 GiB, and once the cluster is two-thirds full the next one simply
+cannot fit: the upload fails and the cluster sits below `full_ratio` instead of
+crossing it. Past about 85%, drop to 250 MB images for the same reason.
 
 Use random data, not zeros — a file of zeros may not consume the space you expect once
 it reaches the cluster, and the point of this exercise is to actually run out.
 
-One 3.5 GB image is 10.5 GB of cluster. Upload it under four different names and the
-cluster is full — measured on this lab, each upload moved the cluster 23 points:
-23.67% → 46.46% → 69.64% → 89.04% → 96.10%.
+Each 1 GB upload moves the cluster about 7 points. Keep going until `ceph df` stops
+climbing or the health check below fires.
 
 ```bash
 incus exec ceph-node1 -- cephadm shell -- ceph df
@@ -2706,7 +2720,7 @@ Glance recovers on its own once space is available; no restart needed.
 
 ### What to take away
 
-- **Capacity is `size × replication`.** A 3.5 GB image is 10.5 GB of cluster. Check
+- **Capacity is `size × replication`.** At `size = 2` a 3.5 GB image is 7 GiB of cluster. Check
   `ceph df` *before* uploading anything large, not after.
 - **`nearfull` at 85% is your warning**, and it is there so you never reach 95%. Treat
   it as an incident, not a notice.

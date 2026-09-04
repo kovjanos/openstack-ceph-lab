@@ -298,6 +298,19 @@ cat > "$BUILD_DIR/Dockerfile" <<DOCKERFILE
 FROM ubuntu:24.04
 ENV container container
 
+# --- apt has no read timeout by default, so a mirror that accepts the connection and
+# --- then goes quiet stalls the build indefinitely. Observed on ports.ubuntu.com: a
+# --- single package sat for four minutes before apt's internal timeout fired, on a run
+# --- where the whole image build took 21 minutes instead of the usual eight. Thirty
+# --- seconds and three retries turns a dead mirror into a brief pause rather than a
+# --- build everyone assumes has hung. This must precede the first apt-get to apply.
+RUN printf '%s\n' \
+    'Acquire::http::Timeout "30";' \
+    'Acquire::https::Timeout "30";' \
+    'Acquire::ftp::Timeout "30";' \
+    'Acquire::Retries "3";' \
+    > /etc/apt/apt.conf.d/99lab-timeouts
+
 # iptables is explicit: kolla-net-setup.sh needs it for the Horizon DNAT and it is
 # otherwise only pulled in as somebody else's dependency.
 # isc-dhcp-client is here for Octavia: Kolla's octavia-interface.service runs a

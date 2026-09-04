@@ -41,7 +41,7 @@ that is expected, not a broken page.
 ## Step 3 — What filled it
 
 In the incident that produced this exercise: a stuck 16 GiB snapshot plus a 3.5 GB
-distro image. At `size = 3` that is 58 GiB of a 45 GiB cluster. Recovery took usage
+distro image. At `size = 2` that is 39 GiB of a 15 GiB cluster. Recovery took usage
 from 95.74% back to 3.82%.
 
 Two habits come out of it:

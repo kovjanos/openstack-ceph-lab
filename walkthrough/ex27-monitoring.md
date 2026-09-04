@@ -18,7 +18,7 @@ Everything a status page should have, in one screen:
 
 - **Details** — cluster ID, orchestrator, and the exact Ceph version (20.2.2 tentacle)
 - **Status** — the health check, green here
-- **Capacity** — 4.2 GiB of 45 GiB raw. This is raw, before replication; Exercise 25
+- **Capacity** — a few GiB of 15 GiB raw. This is raw, before replication; Exercise 25
   explains why the usable figure is much smaller
 - **Cluster Utilization** — throughput, IOPS and OSD apply/commit latency over the last
   hour. These are the dashboard's own charts, drawn from the mgr module, not Grafana —
