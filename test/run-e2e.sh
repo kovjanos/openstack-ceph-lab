@@ -6,6 +6,10 @@
 #   OSD_SIZE=7G ./test/run-e2e.sh     override a provisioning knob
 #   SKIP_BUILD=1 ./test/run-e2e.sh    exercises only, against the lab already running
 #
+# Resuming after a failure, so an expensive stage is not repeated:
+#   SKIP_TEARDOWN=1 SKIP_KERNEL=1 ./test/run-e2e.sh    keep vmlinux-arm64, rebuild image
+#   SKIP_TEARDOWN=1 SKIP_KERNEL=1 SKIP_IMAGE=1 ./test/run-e2e.sh   provision onwards
+#
 # Results land in test/results/<timestamp>/. Nothing is written outside that directory
 # except the lab itself.
 set -u
@@ -33,6 +37,7 @@ done
 note "metrics collectors started"
 
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
+  if [ "${SKIP_TEARDOWN:-0}" != 1 ]; then
     stage "STAGE 1/5 teardown"
     # bounded: an unbounded stop once hung for over seven hours while still printing
     container machine stop "$MACHINE" >>"$LOG" 2>&1 &
@@ -52,16 +57,28 @@ if [ "${SKIP_BUILD:-0}" != 1 ]; then
     container builder delete >>"$LOG" 2>&1
     rm -rf "$LAB/.build" "$LAB/vmlinux-arm64"
     note "free after teardown: $(df -g / | awk 'NR==2{print $4}')GB"
+  else
+    note "SKIP_TEARDOWN: keeping the existing machine and images"
+  fi
 
+  if [ "${SKIP_KERNEL:-0}" != 1 ]; then
     stage "STAGE 2/5 kernel"
     ( cd "$LAB" && ./01-build-kernel.sh ) >>"$LOG" 2>&1
     [ -s "$LAB/vmlinux-arm64" ] || { note "KERNEL FAILED"; echo "FAILED kernel" > "$OUT/STATUS"; exit 1; }
     note "kernel ok [$(el)]"
+  else
+    [ -s "$LAB/vmlinux-arm64" ] || { note "SKIP_KERNEL but no vmlinux-arm64"; echo "FAILED no kernel" > "$OUT/STATUS"; exit 1; }
+    note "SKIP_KERNEL: reusing $(ls -lh "$LAB/vmlinux-arm64" | awk '{print $5}') kernel"
+  fi
 
+  if [ "${SKIP_IMAGE:-0}" != 1 ]; then
     stage "STAGE 3/5 image"
     ( cd "$LAB" && ./02-build-image.sh ) >>"$LOG" 2>&1
     rc=$?; [ $rc -eq 0 ] || { note "IMAGE FAILED rc=$rc"; echo "FAILED image rc=$rc" > "$OUT/STATUS"; exit 1; }
     note "image ok [$(el)]"
+  else
+    note "SKIP_IMAGE: reusing the existing image and machine"
+  fi
 
     stage "STAGE 4/5 provision"
     container machine run -n "$MACHINE" --root -- /usr/local/sbin/provision-lab.sh >>"$LOG" 2>&1

@@ -822,6 +822,14 @@ OS loadbalancer create --name lb1 --vip-subnet-id private-subnet
 OS loadbalancer show lb1 -f value -c provisioning_status
 ```
 
+> **If it lands in `ERROR` instead**, the amphorae took longer to boot than Octavia was
+> willing to wait. Kolla's default budget is `amp_active_retries` × `amp_active_wait_sec`
+> = 100 × 2 = 200 seconds, and on a busy Mac two amphorae booting at once can exceed it —
+> measured here at 235s, 293s and one run that gave up at 340s, all on identical
+> configuration. `03-provision.sh` raises the retry count to 300, ten minutes, which is
+> why you are unlikely to see it. If you do: `OS loadbalancer delete lb1 --cascade`, wait
+> for it to go, and create it again.
+
 It sits in `PENDING_CREATE` for a while: Octavia is booting **two** amphorae, each a
 real instance running HAProxy. Measured here: **4 minutes 30 seconds** to `ACTIVE`. Two,
 not one, because the lab sets `octavia_loadbalancer_topology: ACTIVE_STANDBY` — which

@@ -889,6 +889,35 @@ EOF
         info "octavia certificates generated"
     fi
 
+    # Octavia waits amp_active_retries x amp_active_wait_sec for an amphora to answer,
+    # then marks the load balancer ERROR. Kolla ships 100 x 2 = 200 seconds -- it raises
+    # the retry count from the upstream 30 but cuts the interval from 10, so the budget
+    # is shorter than the default, not longer.
+    #
+    # 200 seconds is not enough here. Two amphorae boot at once for ACTIVE_STANDBY on a
+    # machine already running Ceph and the whole control plane, and the second one is
+    # slow whenever the host is busy. Measured across runs on identical configuration:
+    # ACTIVE at 235s and 293s, and one run that gave up at 340s. Whether the lab builds
+    # was decided by how loaded the Mac happened to be.
+    #
+    # 300 retries at the same 2-second interval is ten minutes. The interval stays short
+    # so a healthy amphora is still picked up within two seconds; only the patience for
+    # a slow one changes.
+    #
+    # The path matters. Kolla merges, in order:
+    #     <custom>/octavia.conf                  -- every octavia service
+    #     <custom>/octavia/<service_name>.conf   -- one service, e.g. octavia_worker.conf
+    # There is no <custom>/octavia/octavia.conf in that list, and a file written there is
+    # ignored in silence.
+    if [ "$ENABLE_NETWORK_LOADBALANCER" = yes ]; then
+        mkdir -p /etc/kolla/config
+        cat > /etc/kolla/config/octavia.conf <<'EOF'
+[controller_worker]
+amp_active_retries = 300
+EOF
+        info "octavia amphora wait raised to 10 minutes (was 200s)"
+    fi
+
     # Ceph config and keyrings, per service. Leading tabs from cephadm's
     # generate-minimal-conf break Kolla's ini parser, so strip them.
     #
