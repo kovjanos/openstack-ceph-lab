@@ -155,14 +155,14 @@ re-run `lab-expose` rather than expecting it to stick.
 The exercises are sized for a **26 GB machine**, which is the default in
 `02-build-image.sh`. Measured across a full run, the most the VM ever used was
 **18.7 GB**, during exercises 9-11 with the load balancer and both amphorae running —
-so 26 GB is right-sized rather than generous, and 24 GB has room too. Ceph gives roughly
+so 26 GB is right-sized rather than generous, and 24 GB would still have room. Ceph gives roughly
 **7 GiB usable** from 15 GiB raw at `size = 2`.
 
 | | |
 |---|---|
 | Lab guest | 512 MB RAM, 248 MB image — every workload exercise uses the same one |
 | Concurrent guests | 3-4 on a 26 GB machine, more on 28-32 GB |
-| 24 GB machine | Works, load balancer included. Peak use inside the VM was 18.7 GB, measured during exercises 9-11 with both amphorae up, so 24 GB leaves about 5 GB spare |
+| 24 GB machine | Untested — every recorded run used 26 GB — but the measured 18.7 GB peak would leave it about 5 GB of headroom, load balancer included |
 
 **512 MB is a hard floor for any guest.** Below it, aarch64 UEFI GRUB fails with
 `error: out of memory` before Linux starts, and the console's next line —
@@ -182,7 +182,7 @@ later one uses it; the rest should be torn down or you will run out of memory.
 The exercises are ordered so that state built once is reused, rather than rebooting
 instances for each. Peak cost is two guests (1 GB), or three guests plus two amphorae
 (3 GB) across the load-balancing part. Measured peak use inside the VM across a whole
-run was 18.7 GB, so both fit the default 26 GB machine and both fit 24 GB.
+run was 18.7 GB, so both fit the default 26 GB machine with room to spare.
 
 | Part | Exercises | Running | Needs |
 |---|---|---|---|
@@ -202,9 +202,9 @@ peak inside the VM across a full run was **18.7 GB**, reached during Part D with
 amphorae up.
 
 `02-build-image.sh` defaults to **26 GB**, which leaves about 7 GB clear of that peak.
-**24 GB also works, load balancer included**, with roughly 5 GB spare. The extra 2 GB
-buys tolerance for a slow amphora boot or a rebuild that briefly runs three of them, not
-headroom the exercises actually need.
+Nothing here was measured at 24 GB, but the same peak would leave it roughly 5 GB, so
+the load balancer is not the reason for the default. The extra 2 GB buys tolerance for a
+slow amphora boot or a rebuild that briefly runs three of them.
 
 **If you would rather not run Octavia**, build with `ENABLE_NETWORK_LOADBALANCER=no`,
 which frees the 1.4 GB its four containers hold permanently. Everything except exercises
