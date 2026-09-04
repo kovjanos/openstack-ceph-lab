@@ -91,12 +91,12 @@ ENABLE_NETWORK_LOADBALANCER="${ENABLE_NETWORK_LOADBALANCER:-yes}"
 # host disk the lab can ever consume -- the file grows to the high-water mark of what
 # Ceph writes and never shrinks.
 #
-# 7G is measured, not guessed. Exercises 1-28 peaked at 13.4 GB of OSD data across the
-# whole cluster, so three 7G disks sit at 64% -- clear of the 85% nearfull line with
-# room for a volume or two more. The rest of the size exists only so Exercise 29 has
+# 5G is measured, not guessed. With thin provisioning and size 2, exercises 1-28 peaked
+# at 9.7 GB of Ceph across the whole cluster, so three 5G disks sit at 65% -- clear of
+# the 85% nearfull line with room for a volume or two more. The rest of the size exists only so Exercise 29 has
 # something to fill, and filling it is what costs host disk: at 3x15G/size 3 the files
 # ended at 45 GB, at 3x10G/size 2 at 24 GB.
-OSD_SIZE="${OSD_SIZE:-7G}"
+OSD_SIZE="${OSD_SIZE:-5G}"
 
 # size 2, not 3. On a three-OSD lab this is the difference between ~10 GiB and ~15 GiB
 # usable, and the amphora image alone is 2.5 GiB stored -- 7.5 GiB at size 3 against

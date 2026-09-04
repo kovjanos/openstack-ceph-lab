@@ -20,3 +20,6 @@ vmlinux-arm64
 # from macOS (see "Reaching a workload from your own browser" in the exercises).
 labkey.pem
 *.pem
+
+# end-to-end run output
+test/results/

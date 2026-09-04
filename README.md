@@ -13,7 +13,7 @@ shortcut it takes is stated in the build guide.
 
 
 - **Ceph 20.2.2 (tentacle)** deployed by `cephadm` into Incus system containers, on
-  LVM-backed loop devices — 3 mons, 3 OSDs, 45 GiB raw, MDS, RGW
+  LVM-backed loop devices — 3 mons, 3 OSDs, 15 GiB raw, MDS, RGW
 - **OpenStack 2026.1** via Kolla-Ansible `stable/2026.1`: Keystone, Glance, Nova,
   Neutron, Placement, Cinder, Barbican, Heat, Horizon
 - **Everything on Ceph RBD** — Glance images, Cinder volumes, Nova root disks
@@ -38,7 +38,7 @@ end
 subgraph VM["container machine openstack-lab — Ubuntu 24.04 ARM64 · 8 vCPU · 26 GB · /dev/kvm"]
 
   subgraph DISK["Storage substrate"]
-    LVM["loop0/1/2 → ceph-vg1/2/3 → osd1/2/3<br/>15 GiB each · 45 GiB raw"]
+    LVM["loop0/1/2 → ceph-vg1/2/3 → osd1/2/3<br/>15 GiB each · 15 GiB raw"]
   end
 
   subgraph CEPHC["Ceph 20.2.2 tentacle — 3 Incus system containers on incusbr0 10.100.0.0/24"]
@@ -132,7 +132,7 @@ Everything except exercises 9–11 is unchanged, and Exercise 9 still teaches ro
 and sticky sessions using HAProxy in a guest.
 
 It costs one-off resources too: about 3 minutes to build the amphora image, and 7.5 GiB
-of the 45 GiB Ceph cluster once it is in Glance (2.5 GiB raw, charged at `size = 3`).
+of the 15 GiB Ceph cluster once it is in Glance (2.5 GiB raw, charged at `size = 3`).
 
 The service behind it is OpenStack's Octavia, which is what the settings and error
 messages say; the flag names the capability so you do not have to know that first.
@@ -159,6 +159,7 @@ one.
 | `03-provision.sh` | Runs in the VM. Eleven checkpointed phases from loop devices to a verified cloud. |
 | `sync-provision.sh` | Pushes an edited `03-provision.sh` into the machine without rebuilding the image. |
 | `openstack-ceph-lab-build.md` | The build guide: every phase, why it is done that way, and what breaks otherwise. |
+| `test/` | End-to-end verification: rebuilds the lab and runs all 29 exercises, recording disk and memory per step. See [`test/README.md`](test/README.md). |
 | `openstack-ceph-lab-exercise.md` | 29 day-2 exercises, each with a real incident behind it, CLI steps, the web-UI equivalent, and cleanup. |
 | `walkthrough/` | Screenshots of the web-UI side of every exercise, one Markdown file per exercise. |
 
