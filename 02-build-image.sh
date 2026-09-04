@@ -473,7 +473,7 @@ RUN systemctl mask virtlogd.service virtlogd.socket \\
 # --- ceph-common is 19.2.3 and cannot parse the cephx keys a Tentacle cluster
 # --- mints, so it comes from the pinned upstream repo instead.
 # ---
-# --- ceph-fuse is here for the same reason, not for convenience. Exercise 22 needs
+# --- ceph-fuse is here for the same reason, not for convenience. Exercise 24 needs
 # --- it because the VM kernel has no CephFS driver, and installing it later would
 # --- mean an 'apt-get update' inside a machine whose whole point is a pinned
 # --- $CEPH_VERSION -- the one thing most likely to drag in a mismatched client.

@@ -2682,9 +2682,15 @@ incus exec ceph-node1 -- cephadm shell -- ceph df
 ```
 
 ```
-TOTAL           45 GiB   1.8 GiB avail   43 GiB used   96.10%
-glance-images   14 GiB stored   41 GiB used   100.00%   MAX AVAIL 0 B
+TOTAL           15 GiB   3.8 GiB avail   11 GiB used   74.33%
+glance-images   4.8 GiB stored   9.6 GiB used   100.00%   MAX AVAIL 0 B
 ```
+
+**The cluster total reads 74%, not 80%.** `full_ratio` is enforced per OSD, not on the
+average: CRUSH does not spread data perfectly evenly, so one disk crossed 0.80 while the
+others were still lower. That is why `MAX AVAIL` is already `0 B` — Ceph sizes it from
+the fullest OSD, because that is the one that will stop accepting writes first. On a
+real cluster the same thing happens, just with the average closer to the limit.
 
 ### What it looks like
 
@@ -2693,10 +2699,10 @@ incus exec ceph-node1 -- cephadm shell -- ceph health detail
 ```
 
 ```
-HEALTH_ERR 1 backfillfull osd(s); 2 full osd(s); 13 pool(s) full
-[WRN] OSD_BACKFILLFULL: 1 backfillfull osd(s)
-    osd.1 is backfill full
-[ERR] OSD_FULL: 2 full osd(s)
+HEALTH_ERR 1 full osd(s); 1 nearfull osd(s); 13 pool(s) full
+[ERR] OSD_FULL: 1 full osd(s)
+    osd.2 is full
+[WRN] OSD_NEARFULL: 1 nearfull osd(s)
 ```
 
 Every pool shows `MAX AVAIL 0 B`. Glance returns
@@ -2757,7 +2763,7 @@ with the fill, and leaving a non-default limit behind is the kind of thing that 
 the next person to look at the cluster.
 
 ```
-TOTAL  45 GiB  43 GiB avail  1.7 GiB used  3.82%
+TOTAL  15 GiB  11 GiB avail  4.3 GiB used  28.67%
 ```
 
 Glance recovers on its own once space is available; no restart needed.

@@ -3042,21 +3042,27 @@ From macOS: `container machine stop openstack-lab && container machine delete op
 
 ## Disk usage on macOS
 
-**Measured peak for a full run of all 29 exercises: 50.7 GB** in
-`~/Library/Application Support/com.apple.container`. Where it goes, and when:
+**Measured peak for a full run of all 29 exercises: 44.7 GB** in
+`~/Library/Application Support/com.apple.container`, on 3x5G OSDs at `size = 2` with
+thin provisioning. Where it goes, and when:
 
 | Point | Host store | Ceph raw used |
 |---|---|---|
-| after provisioning, no exercises | 29.4 GB | 2.4 GB of 21 |
-| through the load-balancer exercises | 39.3 GB | 8.2 GB |
-| through Exercise 28 | 48.4 GB | 9.6 GB |
-| Exercise 29 (fills the cluster on purpose) | **50.7 GB** | 19.0 GB |
+| after provisioning, no exercises | 34.9 GB | 2.7 GB of 15 |
+| through the load-balancer exercises | 41.0 GB | 8.2 GB |
+| through Exercise 28 | 42.2 GB | 5.9 GB |
+| Exercise 29 (fills the cluster on purpose) | **44.7 GB** | 11.0 GB |
 
-Two things follow from that table. **The floor is Kolla, not Ceph** — 29.4 GB is on disk
-before a single exercise runs, and almost all of it is OpenStack's container images.
-And **the OSDs are sized for Exercise 29, not for the other 28**: exercises 1-28 never
-exceed 9.7 GB of Ceph, so the rest of the allocation exists only so the fill exercise
-has something to fill.
+**The floor is Kolla, not Ceph.** 34.9 GB is on disk before a single exercise runs, and
+almost all of it is OpenStack's container images. Ceph never exceeds 11 GB even when
+Exercise 29 is deliberately filling it, and the exercises before that peak at 8.2 GB.
+Shrinking the OSDs further does not help — see Exercise 29 for what happens when they
+are too small to survive being filled.
+
+Memory, measured the same way: the VM's `phys_footprint` sits at its full 26 GB
+allocation, but **peak use inside the guest was 18.7 GB**, during the load-balancer
+exercises. 26 GB is right-sized rather than generous; 24 GB would work and leave little
+margin.
 
 ### The disk never shrinks by itself
 

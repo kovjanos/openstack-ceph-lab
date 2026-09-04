@@ -92,9 +92,9 @@ want to open a workload in your own browser.
 | Hardware | Apple Silicon M3 or later |
 | macOS | 26 |
 | Tooling | Apple [`container`](https://github.com/apple/container) CLI 1.3.1+ |
-| Memory | 26 GB to the machine by default; 24 GB works with `ENABLE_NETWORK_LOADBALANCER=no`, 32 GB on a 48 GB Mac |
-| Disk | ~55 GB free. Measured peak 50.7 GB on a full run of all 29 exercises |
-| Time | About 70 minutes end to end: 2 min kernel, 8 min image, 26 min provision, 34 min exercises |
+| Memory | 26 GB to the machine by default, and it is not oversized: measured peak inside the VM was 18.7 GB, during the load-balancer exercises; 24 GB works with `ENABLE_NETWORK_LOADBALANCER=no`, 32 GB on a 48 GB Mac |
+| Disk | ~50 GB free. Measured peak 44.7 GB across a full run of all 29 exercises |
+| Time | 1h40m end to end on a clean run: 11 min kernel, 21 min image, 33 min provision, 34 min exercises. The build stages track how fast `ports.ubuntu.com` is on the day |
 
 `MACHINE_CPUS` and `MACHINE_MEMORY` in `02-build-image.sh` set the machine's size.
 

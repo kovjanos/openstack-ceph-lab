@@ -558,7 +558,7 @@ phase_50_ceph() {
     # does nothing for space already released, which is why it has to be here.
     #
     # It matters because each OSD is an LV on a loop device on a sparse file. Without
-    # discard those files only ever grow: Exercise 28 fills the cluster on purpose and
+    # discard those files only ever grow: Exercise 29 fills the cluster on purpose and
     # they stay at 15G each afterwards, holding ~27 GB the cluster is no longer using.
     # The whole chain carries discard (loop and dm both report
     # discard_max_bytes=4294966784), so BlueStore's frees reach the file as hole

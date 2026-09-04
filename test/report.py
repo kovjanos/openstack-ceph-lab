@@ -74,8 +74,7 @@ for lab, a, b in steps:
     alloc = L(int(e["epoch"]), "ceph_raw_total_mb")
     vmfs_s, vmfs_e = L(int(s["epoch"]), "guest_used_mb"), L(int(e["epoch"]), "guest_used_mb")
     pk_fp  = max(M(int(r["epoch"]), "vm_footprint_mb") for r in rs)/1024
-    pk_rss = max(M(int(r["epoch"]), "vm_rss_mb") or gb(r["vm_rss_mb"]) for r in rs)/1 if mem else max(gb(r["vm_rss_mb"]) for r in rs)
-    pk_rss = pk_rss/1024 if mem else pk_rss
+    pk_rss = max(M(int(r["epoch"]), "vm_rss_mb") for r in rs)/1024
     pk_gm  = max(L(int(r["epoch"]), "guest_mem_used_mb") for r in rs)/1024
     name = lab.replace("STAGE ","")
     name = re.sub(r' \(3x\d+G OSDs, pool size \d\)', '', name)[:25]
