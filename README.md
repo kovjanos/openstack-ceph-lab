@@ -7,9 +7,11 @@ two guides explain it; 29 day-2 exercises give you something to do with it.
 This is a lab, not a production reference. It is sized to fit on one laptop and every
 shortcut it takes is stated in the build guide.
 
-If you are looking for some theory, start here:
+If you are looking for some videos first, look into:
 - OpenStack Tutorial – Operate Your Own Private Cloud  / freeCodeCamp.org - https://www.youtube.com/watch?v=_gWfFEuert8
+- Ceph Setup 101 - Clusters, Hosts, and OSDs & Ceph in 5 Minutes: Mount and Use Your Distributed Storage / Nodematic Tutorials - https://www.youtube.com/watch?v=3z6uGRl7AKU & https://www.youtube.com/watch?v=_uW8UilEMVo
 
+<br><br>
 
 
 ![OpenStack and Ceph lab on Apple Silicon](img/lab_overview.jpeg)
