@@ -7,6 +7,11 @@ two guides explain it; 29 day-2 exercises give you something to do with it.
 This is a lab, not a production reference. It is sized to fit on one laptop and every
 shortcut it takes is stated in the build guide.
 
+If you are looking for some theory, start here:
+- OpenStack Tutorial – Operate Your Own Private Cloud  / freeCodeCamp.org - https://www.youtube.com/watch?v=_gWfFEuert8
+
+
+
 ![OpenStack and Ceph lab on Apple Silicon](img/lab_overview.jpeg)
 
 ## What you get
